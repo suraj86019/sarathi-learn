@@ -122,6 +122,8 @@ export interface DashboardData {
     total_students: number;
     total_teachers: number;
     total_admins: number;
+    total_classes?: number;
+    total_subjects?: number;
     ai_quota_used: number;
     ai_quota_limit: number;
     ai_quota_percentage: number;

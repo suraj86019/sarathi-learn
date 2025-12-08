@@ -79,7 +79,17 @@ class AdminProfile(models.Model):
 
     def has_school_access(self, school):
         """Check if admin has access to a specific school"""
-        return self.schools.filter(id=school.id).exists()
+        # Check AdminSchool relationship first
+        if self.schools.filter(id=school.id).exists():
+            return True
+        # Fallback: check SchoolUser relationship
+        from superadmin.models import SchoolUser
+        return SchoolUser.objects.filter(
+            user=self.user,
+            school=school,
+            role_in_school='ADMIN',
+            is_active=True
+        ).exists()
 
 
 class AdminSchool(models.Model):

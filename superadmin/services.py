@@ -309,7 +309,7 @@ class SchoolService:
             'total_teachers': school.total_teachers,
             'total_students': school.total_students,
             'total_users': school.total_users,
-            'total_classes': school.classes.count(),
+            'total_classes': school.school_classes.count(),  # Using SchoolClass mapping
             'ai_quota_used': school.ai_quota_used,
             'ai_quota_limit': school.ai_quota_limit,
             'ai_quota_percentage': school.ai_quota_percentage,
@@ -330,13 +330,16 @@ class SubjectService:
         Returns:
             list: List of permission classes
         """
-        from rest_framework.permissions import AllowAny
-        from users.permissions import IsSuperAdmin
-        from rest_framework.permissions import IsAuthenticated
+        from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission
+
+        class IsAdminOrSuperAdmin(BasePermission):
+            def has_permission(self, request, view):
+                role = getattr(request.user, 'user_role', None)
+                return bool(role and role.role_type in ['SUPER_ADMIN', 'ADMIN'])
 
         if action in ['list', 'retrieve']:
             return [AllowAny()]
-        return [IsAuthenticated(), IsSuperAdmin()]
+        return [IsAuthenticated(), IsAdminOrSuperAdmin()]
 
     @staticmethod
     def get_subjects_by_category():
@@ -363,34 +366,41 @@ class ClassService:
     def get_filtered_classes_queryset(user):
         """
         Get filtered classes queryset based on user role
+        Classes are templates available to everyone (Grade 1-12)
 
         Args:
             user: User instance
 
         Returns:
-            QuerySet: Filtered classes queryset
+            QuerySet: Classes queryset (all active classes)
         """
-        if hasattr(user, 'user_role') and user.user_role.role_type == 'SUPER_ADMIN':
-            return Class.objects.all()
-        elif hasattr(user, 'admin_profile'):
-            return Class.objects.filter(school=user.admin_profile.school)
-        elif hasattr(user, 'teacher_profile'):
-            return Class.objects.filter(school=user.teacher_profile.school)
-
-        return Class.objects.none()
+        # Class templates are available to all authenticated users
+        return Class.objects.filter(is_active=True).order_by('grade_number')
 
     @staticmethod
-    def get_class_students(class_obj):
+    def get_user_school_ids(user):
         """
-        Get all students in a class
-
-        Args:
-            class_obj: Class instance
-
-        Returns:
-            QuerySet: Students queryset
+        Return list of school IDs the user is associated with via SchoolUser.
+        Admins/teachers should be limited to their schools.
         """
-        return class_obj.students.all()
+        return list(
+            SchoolUser.objects.filter(user=user, is_active=True).values_list('school_id', flat=True)
+        )
+
+    @staticmethod
+    def validate_user_can_manage_school(user, school_id):
+        """
+        Ensure the user is allowed to manage classes for the given school.
+        Super admins are always allowed; others must belong to the school.
+        """
+        if hasattr(user, 'user_role') and user.user_role.role_type == 'SUPER_ADMIN':
+            return True
+        allowed_ids = ClassService.get_user_school_ids(user)
+        # Convert UUIDs to strings for comparison
+        allowed_str = [str(uid) for uid in allowed_ids]
+        if str(school_id) not in allowed_str:
+            raise ValidationError('You do not have permission to manage classes for this school')
+        return True
 
 
 class AnnouncementService:

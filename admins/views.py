@@ -911,6 +911,18 @@ class TeacherTaskViewSet(viewsets.ViewSet):
     """
     permission_classes = [IsAuthenticated, IsAdmin]
 
+    def _get_attendance_class_info(self, teacher):
+        """Safely get attendance class info, handling missing Class references"""
+        try:
+            if teacher.attendance_class:
+                return {
+                    'id': str(teacher.attendance_class.id),
+                    'name': f"Class {teacher.attendance_class.grade_number}",
+                }
+        except Exception:
+            pass
+        return None
+
     @action(detail=False, methods=['post'])
     def create_task(self, request):
         """Create a task for a teacher"""
@@ -1058,7 +1070,6 @@ class TeacherTaskViewSet(viewsets.ViewSet):
                 'user', 'school'
             ).prefetch_related(
                 'teacher_subjects__subject',
-                'class_assignments__school_class',
                 'class_assignments__subject'
             ).get(id=teacher_id)
             
@@ -1077,18 +1088,22 @@ class TeacherTaskViewSet(viewsets.ViewSet):
                 for ts in teacher.teacher_subjects.all()
             ]
             
-            # Get classes
-            classes = [
-                {
-                    'id': str(ca.id),  # Assignment ID
-                    'class_id': str(ca.school_class.id) if ca.school_class else '',
-                    'class_name': ca.school_class.full_name if ca.school_class else 'N/A',
-                    'subject_id': str(ca.subject.id) if ca.subject else '',
-                    'subject': ca.subject.name if ca.subject else 'N/A',
-                    'academic_year': ca.academic_year
-                }
-                for ca in teacher.class_assignments.filter(is_active=True)
-            ]
+            # Get classes - handle case where Class may not exist
+            classes = []
+            for ca in teacher.class_assignments.filter(is_active=True):
+                try:
+                    class_obj = ca.school_class
+                    classes.append({
+                        'id': str(ca.id),
+                        'class_id': str(class_obj.id) if class_obj else '',
+                        'class_name': f"Class {class_obj.grade_number}" if class_obj else 'N/A',
+                        'subject_id': str(ca.subject.id) if ca.subject else '',
+                        'subject': ca.subject.name if ca.subject else 'N/A',
+                        'academic_year': ca.academic_year
+                    })
+                except Exception:
+                    # Skip assignments with missing class references
+                    pass
             
             # Get attendance summary (last 30 days)
             from teachers.models import Attendance
@@ -1154,10 +1169,7 @@ class TeacherTaskViewSet(viewsets.ViewSet):
                     'can_assign_homework': teacher.can_assign_homework,
                     'can_grade_assignments': teacher.can_grade_assignments
                 },
-                'attendance_class': {
-                    'id': str(teacher.attendance_class.id) if teacher.attendance_class else None,
-                    'name': teacher.attendance_class.full_name if teacher.attendance_class else None,
-                } if teacher.attendance_class else None,
+                'attendance_class': self._get_attendance_class_info(teacher),
                 'attendance_summary': {
                     'total_marked': total_attendance,
                     'last_30_days': list(attendance_30_days),
@@ -1389,30 +1401,34 @@ class AttendanceViewSet(viewsets.ViewSet):
             admin_profile = AdminProfile.objects.get(user=request.user)
             school_id = request.query_params.get('school_id')
             
-            # Get classes from admin's schools
+            # Get classes from admin's schools using SchoolClass mapping
+            from superadmin.models import SchoolClass
             schools = admin_profile.schools.all()
             if school_id:
                 schools = schools.filter(id=school_id)
             
             classes_data = []
             for school in schools:
-                classes = Class.objects.filter(school=school, is_active=True).order_by('grade', 'section')
-                for cls in classes:
-                    # Count students in class
+                school_classes = SchoolClass.objects.filter(
+                    school=school, is_active=True
+                ).select_related('class_obj').order_by('class_obj__grade_number', 'section')
+                
+                for sc in school_classes:
+                    # Count students in class (using SchoolClass id)
                     from students.models import StudentProfile
                     student_count = StudentProfile.objects.filter(
-                        current_class=cls, user__is_active=True
+                        current_class_id=sc.id, user__is_active=True
                     ).count()
                     
                     classes_data.append({
-                        'id': str(cls.id),
-                        'name': cls.full_name,
-                        'grade': cls.grade,
-                        'section': cls.section,
+                        'id': str(sc.id),
+                        'name': sc.full_name,
+                        'grade': sc.class_obj.grade_number,
+                        'section': sc.section or '',
                         'school_id': str(school.id),
                         'school_name': school.name,
                         'student_count': student_count,
-                        'academic_year': cls.academic_year
+                        'academic_year': sc.academic_year
                     })
             
             return ResponseUtils.create_success_response(

@@ -4,19 +4,19 @@ import {
   School,
   Users,
   GraduationCap,
-  Activity,
   Bell,
   LogOut,
   TrendingUp,
-  BarChart3,
   Plus,
   ClipboardList,
-  Brain,
   Loader2,
   ChevronRight,
   Clock,
   Menu,
   X,
+  BookOpen,
+  CreditCard,
+  Activity,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import adminDashboardService, { DashboardData, School as SchoolType } from '../../services/adminDashboard.service';
@@ -25,12 +25,15 @@ import TeachersList from './TeachersList';
 import StudentsList from './StudentsList';
 import NotificationsList from './NotificationsList';
 import TasksList from './TasksList';
+import ClassesList from './ClassesList';
+import SubjectsList from './SubjectsList';
+import PaymentsList from './PaymentsList';
 import AddStudentModal from '../../components/admin/AddStudentModal';
 import AddTeacherModal from '../../components/admin/AddTeacherModal';
 import CreateNotificationModal from '../../components/admin/CreateNotificationModal';
 import CreateTaskModal from '../../components/admin/CreateTaskModal';
 
-type ActiveView = 'dashboard' | 'schools' | 'teachers' | 'students' | 'notifications' | 'tasks' | 'activities' | 'reports' | 'settings';
+type ActiveView = 'dashboard' | 'schools' | 'teachers' | 'students' | 'classes' | 'subjects' | 'notifications' | 'tasks' | 'payments' | 'activities' | 'reports' | 'settings';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -123,6 +126,27 @@ export default function AdminDashboard() {
             selectedSchoolName={selectedSchool?.name}
           />
         );
+      case 'classes':
+        return (
+          <ClassesList 
+            onBack={() => setActiveMenu('dashboard')} 
+            schools={schools}
+            selectedSchoolId={selectedSchool?.id}
+          />
+        );
+      case 'subjects':
+        return (
+          <SubjectsList 
+            onBack={() => setActiveMenu('dashboard')} 
+          />
+        );
+      case 'payments':
+        return (
+          <PaymentsList 
+            onBack={() => setActiveMenu('dashboard')} 
+            schools={schools}
+          />
+        );
       default:
         return renderDashboard();
     }
@@ -181,10 +205,11 @@ export default function AdminDashboard() {
             onClick={() => handleMenuClick('teachers')}
           />
           <StatCard
-            icon={<Brain className="w-6 h-6 sm:w-8 sm:h-8 text-purple-600" />}
-            value={`${dashboardData?.school_stats?.ai_quota_percentage || 0}%`}
-            label="AI Usage"
+            icon={<BookOpen className="w-6 h-6 sm:w-8 sm:h-8 text-purple-600" />}
+            value={String(dashboardData?.school_stats?.total_classes || 0)}
+            label="Classes"
             bgColor="bg-purple-50"
+            onClick={() => handleMenuClick('classes')}
           />
           <StatCard
             icon={<School className="w-6 h-6 sm:w-8 sm:h-8 text-amber-600" />}
@@ -198,7 +223,7 @@ export default function AdminDashboard() {
         {/* Quick Actions */}
         <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-6 sm:mb-8">
           <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4">
             <QuickActionButton
               icon={<Plus className="w-4 h-4 sm:w-5 sm:h-5" />}
               label="Add Teacher"
@@ -223,33 +248,54 @@ export default function AdminDashboard() {
               color="amber"
               onClick={() => setShowCreateTask(true)}
             />
+            <QuickActionButton
+              icon={<BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />}
+              label="Classes"
+              color="blue"
+              onClick={() => handleMenuClick('classes')}
+            />
+            <QuickActionButton
+              icon={<Plus className="w-4 h-4 sm:w-5 sm:h-5" />}
+              label="Subjects"
+              color="amber"
+              onClick={() => handleMenuClick('subjects')}
+            />
           </div>
         </div>
 
         {/* Two Column Layout */}
         <div className="grid lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
-          {/* AI Usage Overview */}
-          <ChartCard title="AI Usage Overview" icon={<Brain className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />}>
-            <div className="h-48 sm:h-64 flex items-end justify-around px-2 sm:px-4">
-              {[
-                { month: 'Mon', value: 120 },
-                { month: 'Tue', value: 180 },
-                { month: 'Wed', value: 110 },
-                { month: 'Thu', value: 160 },
-                { month: 'Fri', value: 200 },
-                { month: 'Sat', value: 80 },
-                { month: 'Sun', value: 60 },
-              ].map((item, index) => (
-                <div key={index} className="flex flex-col items-center flex-1 mx-0.5 sm:mx-1">
-                  <div
-                    className="w-full bg-gradient-to-t from-purple-600 to-purple-400 rounded-t-lg transition-all hover:from-purple-700 hover:to-purple-500"
-                    style={{ height: `${(item.value / 250) * 100}%` }}
-                  ></div>
-                  <span className="text-[10px] sm:text-xs text-gray-600 mt-1 sm:mt-2">{item.month}</span>
-                </div>
-              ))}
+          {/* Payment Overview */}
+          <div 
+            className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 cursor-pointer hover:shadow-md transition-shadow"
+            onClick={() => handleMenuClick('payments')}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
+                <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Payment Status</h3>
+              </div>
+              <ChevronRight className="w-5 h-5 text-slate-400" />
             </div>
-          </ChartCard>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center p-3 bg-green-50 rounded-xl">
+                <p className="text-2xl font-bold text-green-600">8</p>
+                <p className="text-xs text-slate-500">Months Paid</p>
+              </div>
+              <div className="text-center p-3 bg-yellow-50 rounded-xl">
+                <p className="text-2xl font-bold text-yellow-600">2</p>
+                <p className="text-xs text-slate-500">Pending</p>
+              </div>
+              <div className="text-center p-3 bg-red-50 rounded-xl">
+                <p className="text-2xl font-bold text-red-600">2</p>
+                <p className="text-xs text-slate-500">Overdue</p>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-sm text-slate-500">Total Due</span>
+              <span className="text-lg font-bold text-red-600">₹20,000</span>
+            </div>
+          </div>
 
           {/* Attendance Trend */}
           <ChartCard title="Attendance (7 Days)" icon={<TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />}>
@@ -384,6 +430,20 @@ export default function AdminDashboard() {
                 color="amber"
                 onClick={() => handleMenuClick('tasks')}
               />
+              <QuickAccessItem
+                icon={<BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />}
+                label="Classes"
+                count={0}
+                color="indigo"
+                onClick={() => handleMenuClick('classes')}
+              />
+              <QuickAccessItem
+                icon={<ClipboardList className="w-4 h-4 sm:w-5 sm:h-5" />}
+                label="Subjects"
+                count={0}
+                color="amber"
+                onClick={() => handleMenuClick('subjects')}
+              />
             </div>
           </div>
         </div>
@@ -452,6 +512,23 @@ export default function AdminDashboard() {
             active={activeMenu === 'students'}
             onClick={() => handleMenuClick('students')}
           />
+
+          <div className="px-4 sm:px-6 py-2 sm:py-3 mt-2 sm:mt-4">
+            <p className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Academics</p>
+          </div>
+
+          <MenuItem
+            icon={<BookOpen className="w-5 h-5" />}
+            label="Classes"
+            active={activeMenu === 'classes'}
+            onClick={() => handleMenuClick('classes')}
+          />
+          <MenuItem
+            icon={<ClipboardList className="w-5 h-5" />}
+            label="Subjects"
+            active={activeMenu === 'subjects'}
+            onClick={() => handleMenuClick('subjects')}
+          />
           
           <div className="px-4 sm:px-6 py-2 sm:py-3 mt-2 sm:mt-4">
             <p className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</p>
@@ -469,11 +546,16 @@ export default function AdminDashboard() {
             active={activeMenu === 'tasks'}
             onClick={() => handleMenuClick('tasks')}
           />
+          
+          <div className="px-4 sm:px-6 py-2 sm:py-3 mt-2 sm:mt-4">
+            <p className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Finance</p>
+          </div>
+          
           <MenuItem
-            icon={<BarChart3 className="w-5 h-5" />}
-            label="Reports"
-            active={activeMenu === 'reports'}
-            onClick={() => handleMenuClick('schools')}
+            icon={<CreditCard className="w-5 h-5" />}
+            label="Payments"
+            active={activeMenu === 'payments'}
+            onClick={() => handleMenuClick('payments')}
           />
         </nav>
 

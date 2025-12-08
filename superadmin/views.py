@@ -11,9 +11,9 @@ from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from django.core.exceptions import ValidationError
 
-from .models import School, Subject, Class, SchoolUser, Announcement, SystemSettings
+from .models import School, Subject, Class, SchoolClass, SchoolUser, Announcement, SystemSettings
 from .serializers import (
-    SchoolSerializer, SubjectSerializer, ClassSerializer,
+    SchoolSerializer, SubjectSerializer, ClassSerializer, SchoolClassSerializer,
     SchoolUserSerializer, AnnouncementSerializer, SystemSettingsSerializer
 )
 from .services import (
@@ -90,7 +90,7 @@ class SubjectViewSet(viewsets.ModelViewSet):
     """
     queryset = Subject.objects.all().order_by('name')
     serializer_class = SubjectSerializer
-    permission_classes = [AllowAny]  # Public access to view subjects
+    permission_classes = [AllowAny]  # Overridden below
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['category', 'is_active']
     search_fields = ['name', 'code', 'description']
@@ -98,7 +98,7 @@ class SubjectViewSet(viewsets.ModelViewSet):
     
     def get_permissions(self):
         """
-        Allow public read access, but require authentication for write operations
+        Allow public read access, but require authentication + admin/super-admin for write operations
         """
         return SubjectService.get_subject_permissions(self.action)
     
@@ -111,26 +111,92 @@ class SubjectViewSet(viewsets.ModelViewSet):
 
 class ClassViewSet(viewsets.ModelViewSet):
     """
-    ViewSet for Class CRUD operations
+    ViewSet for Class (Template) CRUD operations
+    Classes are templates like Grade 1-12 with subjects
     """
-    queryset = Class.objects.all().order_by('school', 'grade', 'section')
+    queryset = Class.objects.all().order_by('grade_number')
     serializer_class = ClassSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['school', 'grade', 'section', 'academic_year', 'is_active']
-    search_fields = ['name', 'grade', 'section']
-    ordering_fields = ['grade', 'section', 'current_students']
-    
-    def get_queryset(self):
-        """Filter classes based on user's school"""
-        return ClassService.get_filtered_classes_queryset(self.request.user)
+    filterset_fields = ['grade_number', 'is_active']
+    search_fields = ['name', 'grade_number', 'description']
+    ordering_fields = ['grade_number', 'name']
     
     @action(detail=True, methods=['get'])
-    def students(self, request, pk=None):
-        """Get all students in a class"""
+    def subjects(self, request, pk=None):
+        """Get all subjects for this class"""
         class_obj = self.get_object()
-        students = ClassService.get_class_students(class_obj)
-        return Response(ClassResponseUtils.format_class_students_response(students))
+        subjects = class_obj.subjects.all()
+        return Response(SubjectSerializer(subjects, many=True).data)
+    
+    @action(detail=True, methods=['post'])
+    def add_subjects(self, request, pk=None):
+        """Add subjects to this class"""
+        class_obj = self.get_object()
+        subject_ids = request.data.get('subject_ids', [])
+        subjects = Subject.objects.filter(id__in=subject_ids)
+        class_obj.subjects.add(
+            *subjects,
+            through_defaults={'is_mandatory': True, 'is_active': True, 'credits': 0, 'weekly_hours': 0}
+        )
+        return Response({'status': 'subjects added', 'count': len(subject_ids)})
+    
+    @action(detail=True, methods=['post'])
+    def remove_subjects(self, request, pk=None):
+        """Remove subjects from this class"""
+        class_obj = self.get_object()
+        subject_ids = request.data.get('subject_ids', [])
+        subjects = Subject.objects.filter(id__in=subject_ids)
+        class_obj.subjects.remove(*subjects)
+        return Response({'status': 'subjects removed', 'count': len(subject_ids)})
+
+
+class SchoolClassViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for SchoolClass (School-Class Mapping) CRUD operations
+    Maps which classes each school offers
+    Example: School A -> Class 1, Class 2, Class 5
+    """
+    queryset = SchoolClass.objects.all().select_related('school', 'class_obj').order_by('school', 'class_obj__grade_number')
+    serializer_class = SchoolClassSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['school', 'class_obj', 'section', 'academic_year', 'is_active']
+    search_fields = ['school__name', 'class_obj__name', 'section']
+    ordering_fields = ['class_obj__grade_number', 'section', 'academic_year']
+    
+    def get_queryset(self):
+        """Filter school classes based on user's school"""
+        user = self.request.user
+        if hasattr(user, 'user_role') and user.user_role.role_type == 'SUPER_ADMIN':
+            return SchoolClass.objects.all().select_related('school', 'class_obj')
+        # For admins, filter by their schools
+        school_ids = ClassService.get_user_school_ids(user)
+        if school_ids:
+            return SchoolClass.objects.filter(school_id__in=school_ids).select_related('school', 'class_obj')
+        return SchoolClass.objects.none()
+    
+    def perform_create(self, serializer):
+        """Admins can only create school classes for their schools"""
+        school_id = serializer.validated_data.get('school').id
+        ClassService.validate_user_can_manage_school(self.request.user, school_id)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        """Admins can only update school classes for their schools"""
+        school = serializer.validated_data.get('school') or serializer.instance.school
+        ClassService.validate_user_can_manage_school(self.request.user, school.id)
+        serializer.save()
+    
+    @action(detail=False, methods=['get'])
+    def by_school(self, request):
+        """Get all classes for a specific school"""
+        school_id = request.query_params.get('school_id')
+        if not school_id:
+            return Response({'error': 'school_id is required'}, status=400)
+        school_classes = self.get_queryset().filter(school_id=school_id)
+        serializer = self.get_serializer(school_classes, many=True)
+        return Response(serializer.data)
 
 
 class SchoolUserViewSet(viewsets.ModelViewSet):

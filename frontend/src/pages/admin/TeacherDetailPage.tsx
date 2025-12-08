@@ -314,13 +314,17 @@ export default function TeacherDetailPage({ teacherId, onBack }: TeacherDetailPa
       // Load available classes for teacher's school
       setLoadingOptions(true);
       try {
+        console.log('Loading classes for school:', teacher.school?.id);
         const [subjects, classes] = await Promise.all([
           adminDashboardService.getAvailableSubjects(),
           adminDashboardService.getAvailableClasses(teacher.school.id)
         ]);
+        console.log('Available subjects:', subjects);
+        console.log('Available classes:', classes);
         setAvailableSubjects(subjects);
         setAvailableClasses(classes);
         // Initialize with current classes (using class_id and subject_id from response)
+        console.log('Teacher current classes:', teacher.classes);
         setEditClasses(
           teacher.classes?.map((c: any) => ({
             class_id: c.class_id || '',

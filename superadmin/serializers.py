@@ -3,7 +3,7 @@ Super Admin Serializers
 """
 
 from rest_framework import serializers
-from .models import School, Subject, Class, SchoolUser, Announcement, AnnouncementTarget, SystemSettings
+from .models import School, Subject, Class, SchoolClass, SchoolUser, Announcement, AnnouncementTarget, SystemSettings
 from users.serializers import UserSerializer
 
 
@@ -45,26 +45,80 @@ class SchoolSerializer(serializers.ModelSerializer):
 
 
 class ClassSerializer(serializers.ModelSerializer):
-    """Serializer for Class model"""
+    """
+    Serializer for Class model (Template)
+    Class is a template like Grade 1-12 with subjects attached
+    """
     
-    school_name = serializers.CharField(source='school.name', read_only=True)
-    class_teacher_name = serializers.CharField(source='class_teacher.user.get_full_name', read_only=True)
     full_name = serializers.CharField(read_only=True)
-    is_full = serializers.BooleanField(read_only=True)
-    available_seats = serializers.IntegerField(read_only=True)
+    subjects = serializers.PrimaryKeyRelatedField(
+        queryset=Subject.objects.filter(is_active=True),
+        many=True,
+        required=False,
+        allow_empty=True
+    )
+    subject_details = SubjectSerializer(source='subjects', many=True, read_only=True)
     
     class Meta:
         model = Class
         fields = [
-            'id', 'school', 'school_name', 'name', 'grade', 'section',
-            'class_teacher', 'class_teacher_name', 'room_number',
-            'max_students', 'current_students', 'academic_year', 'is_active',
-            'full_name', 'is_full', 'available_seats',
+            'id', 'grade_number', 'name', 'description', 'is_active',
+            'subjects', 'subject_details', 'full_name',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'school_name', 'class_teacher_name', 'full_name',
-            'is_full', 'available_seats', 'created_at', 'updated_at'
+            'id', 'full_name', 'created_at', 'updated_at'
+        ]
+
+    def create(self, validated_data):
+        subjects = validated_data.pop('subjects', [])
+        class_obj = super().create(validated_data)
+        if subjects:
+            class_obj.subjects.set(
+                subjects,
+                through_defaults={'is_mandatory': True, 'is_active': True, 'credits': 0, 'weekly_hours': 0}
+            )
+        return class_obj
+
+    def update(self, instance, validated_data):
+        subjects = validated_data.pop('subjects', None)
+        class_obj = super().update(instance, validated_data)
+        if subjects is not None:
+            class_obj.subjects.set(
+                subjects,
+                through_defaults={'is_mandatory': True, 'is_active': True, 'credits': 0, 'weekly_hours': 0}
+            )
+        return class_obj
+
+
+class SchoolClassSerializer(serializers.ModelSerializer):
+    """
+    Serializer for SchoolClass model (School-Class Mapping)
+    Maps which classes each school offers
+    """
+    
+    school_name = serializers.CharField(source='school.name', read_only=True)
+    class_name = serializers.CharField(source='class_obj.name', read_only=True)
+    grade_number = serializers.IntegerField(source='class_obj.grade_number', read_only=True)
+    class_teacher_name = serializers.CharField(source='class_teacher.user.get_full_name', read_only=True)
+    full_name = serializers.CharField(read_only=True)
+    is_full = serializers.BooleanField(read_only=True)
+    available_seats = serializers.IntegerField(read_only=True)
+    subject_details = SubjectSerializer(source='subjects', many=True, read_only=True)
+    
+    class Meta:
+        model = SchoolClass
+        fields = [
+            'id', 'school', 'school_name', 'class_obj', 'class_name', 'grade_number',
+            'section', 'class_teacher', 'class_teacher_name', 'room_number',
+            'max_students', 'current_students', 'academic_year', 'is_active',
+            'subject_details', 'full_name', 'is_full', 'available_seats',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'school_name', 'class_name', 'grade_number', 'class_teacher_name',
+            'full_name', 'is_full', 'available_seats', 'subject_details',
+            'created_at', 'updated_at'
         ]
 
 

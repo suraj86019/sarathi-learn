@@ -1442,8 +1442,9 @@ class ReportService:
     @staticmethod
     def _get_school_attendance_data(school, date_from, date_to):
         """Get school attendance data"""
+        # Filter by student's school since Attendance.school_class points to Class template
         attendance_query = Attendance.objects.filter(
-            school_class__school=school
+            student__school=school
         )
 
         if date_from:
@@ -1492,12 +1493,35 @@ class AdminDashboardService:
             dict: Dashboard data
         """
         try:
+            # Get admin's schools from AdminSchool relationship
             admin_schools = admin_profile.schools.all()
+            
+            # Also check SchoolUser relationship (fallback)
+            if not admin_schools.exists():
+                from superadmin.models import SchoolUser
+                school_user_schools = SchoolUser.objects.filter(
+                    user=admin_profile.user,
+                    role_in_school='ADMIN',
+                    is_active=True
+                ).values_list('school_id', flat=True)
+                admin_schools = School.objects.filter(id__in=school_user_schools)
 
             if school_id:
                 school = School.objects.filter(id=school_id).first()
-                if not school or not admin_profile.has_school_access(school):
-                    raise ValidationError("Invalid school or no access")
+                if not school:
+                    raise ValidationError("Invalid school")
+                # Check access via both AdminSchool and SchoolUser
+                has_access = admin_profile.has_school_access(school)
+                if not has_access:
+                    from superadmin.models import SchoolUser
+                    has_access = SchoolUser.objects.filter(
+                        user=admin_profile.user,
+                        school=school,
+                        role_in_school='ADMIN',
+                        is_active=True
+                    ).exists()
+                if not has_access:
+                    raise ValidationError("No access to this school")
                 return AdminDashboardService._get_single_school_dashboard(admin_profile, school)
             else:
                 return AdminDashboardService._get_aggregate_dashboard(admin_profile, admin_schools)
@@ -1569,9 +1593,9 @@ class AdminDashboardService:
         today = timezone.now().date()
         start_date = today - timedelta(days=days-1)
         
-        # Get attendance data grouped by date
+        # Get attendance data grouped by date (filter by student's school)
         attendance_data = Attendance.objects.filter(
-            school_class__school__in=school_ids,
+            student__school__in=school_ids,
             date__gte=start_date,
             date__lte=today
         ).values('date').annotate(
@@ -1618,8 +1642,14 @@ class AdminDashboardService:
     @staticmethod
     def _get_single_school_dashboard(admin_profile, school):
         """Get dashboard data for a single school"""
+        from superadmin.models import SchoolClass, Subject
+        
         # Get actual counts from database
         total_students, total_teachers, total_admins = AdminDashboardService._get_school_counts(school)
+        
+        # Get classes and subjects counts
+        total_classes = SchoolClass.objects.filter(school=school, is_active=True).count()
+        total_subjects = Subject.objects.filter(is_active=True).count()
         
         # School statistics
         school_stats = {
@@ -1628,6 +1658,8 @@ class AdminDashboardService:
             'total_students': total_students,
             'total_teachers': total_teachers,
             'total_admins': total_admins,
+            'total_classes': total_classes,
+            'total_subjects': total_subjects,
             'ai_quota_used': school.ai_quota_used,
             'ai_quota_limit': school.ai_quota_limit,
             'ai_quota_percentage': school.ai_quota_percentage
@@ -1690,17 +1722,26 @@ class AdminDashboardService:
     @staticmethod
     def _get_aggregate_dashboard(admin_profile, admin_schools):
         """Get aggregated dashboard data for all admin's schools"""
+        from superadmin.models import SchoolClass, Subject
+        
         # Get actual counts from database
         total_students, total_teachers, total_admins = AdminDashboardService._get_actual_counts(admin_schools)
         
         total_ai_quota_used = sum(s.ai_quota_used for s in admin_schools)
         total_ai_quota_limit = sum(s.ai_quota_limit for s in admin_schools)
+        
+        # Get classes and subjects counts
+        school_ids = [s.id for s in admin_schools]
+        total_classes = SchoolClass.objects.filter(school_id__in=school_ids, is_active=True).count()
+        total_subjects = Subject.objects.filter(is_active=True).count()
 
         school_stats = {
             'schools_count': admin_schools.count(),
             'total_students': total_students,
             'total_teachers': total_teachers,
             'total_admins': total_admins,
+            'total_classes': total_classes,
+            'total_subjects': total_subjects,
             'ai_quota_used': total_ai_quota_used,
             'ai_quota_limit': total_ai_quota_limit,
             'ai_quota_percentage': round((total_ai_quota_used / total_ai_quota_limit * 100), 2) if total_ai_quota_limit > 0 else 0
@@ -2222,11 +2263,19 @@ class TeacherTaskService:
                 # Update attendance class (the class this teacher takes attendance for)
                 if 'attendance_class_id' in data:
                     if data['attendance_class_id']:
-                        attendance_class = Class.objects.get(id=data['attendance_class_id'])
-                        # Verify the class belongs to teacher's school
-                        if attendance_class.school != teacher.school:
-                            raise ValidationError("Attendance class must belong to teacher's school")
-                        teacher.attendance_class = attendance_class
+                        from superadmin.models import SchoolClass, Class
+                        # attendance_class_id could be SchoolClass ID or Class template ID
+                        try:
+                            school_class = SchoolClass.objects.select_related('school', 'class_obj').get(id=data['attendance_class_id'])
+                            # Verify the class belongs to teacher's school
+                            if school_class.school != teacher.school:
+                                raise ValidationError("Attendance class must belong to teacher's school")
+                            # Use the Class template, not SchoolClass
+                            teacher.attendance_class = school_class.class_obj
+                        except SchoolClass.DoesNotExist:
+                            # Try as Class template ID directly
+                            class_template = Class.objects.get(id=data['attendance_class_id'])
+                            teacher.attendance_class = class_template
                     else:
                         teacher.attendance_class = None
                 
@@ -2343,24 +2392,38 @@ class TeacherTaskService:
                 raise ValidationError("You don't have access to this teacher's school")
             
             with transaction.atomic():
+                from superadmin.models import SchoolClass, Class
+                
                 # Deactivate existing class assignments
                 TeacherClassAssignment.objects.filter(teacher=teacher).update(is_active=False)
                 
                 # Add/update class assignments
                 added_classes = []
                 for class_info in classes_data:
-                    school_class = Class.objects.get(id=class_info['class_id'])
+                    # class_id could be either SchoolClass ID or Class template ID
+                    # Try SchoolClass first, then fallback to Class template
+                    class_obj = None
+                    class_display_name = 'N/A'
+                    
+                    try:
+                        school_class = SchoolClass.objects.select_related('school', 'class_obj').get(id=class_info['class_id'])
+                        # Check if class belongs to teacher's school
+                        if school_class.school != teacher.school:
+                            raise ValidationError(f"Class {school_class.full_name} does not belong to teacher's school")
+                        class_obj = school_class.class_obj  # Get the Class template
+                        class_display_name = school_class.full_name
+                    except SchoolClass.DoesNotExist:
+                        # Try as Class template ID
+                        class_obj = Class.objects.get(id=class_info['class_id'])
+                        class_display_name = f"Class {class_obj.grade_number}"
+                    
                     subject = Subject.objects.get(id=class_info['subject_id'])
                     academic_year = class_info.get('academic_year', '2024-2025')
                     
-                    # Check if class belongs to teacher's school
-                    if school_class.school != teacher.school:
-                        raise ValidationError(f"Class {school_class.full_name} does not belong to teacher's school")
-                    
-                    # Get or create assignment
+                    # Get or create assignment using Class template (not SchoolClass)
                     assignment, created = TeacherClassAssignment.objects.update_or_create(
                         teacher=teacher,
-                        school_class=school_class,
+                        school_class=class_obj,  # This is the Class template
                         subject=subject,
                         academic_year=academic_year,
                         defaults={'is_active': True}
@@ -2368,7 +2431,7 @@ class TeacherTaskService:
                     
                     added_classes.append({
                         'id': str(assignment.id),
-                        'class_name': school_class.full_name,
+                        'class_name': class_display_name,
                         'subject_name': subject.name
                     })
                 
@@ -2389,8 +2452,6 @@ class TeacherTaskService:
                 
         except TeacherProfile.DoesNotExist:
             raise ValidationError("Teacher not found")
-        except Class.DoesNotExist:
-            raise ValidationError("Class not found")
         except Subject.DoesNotExist:
             raise ValidationError("Subject not found")
         except Exception as e:
@@ -2415,21 +2476,29 @@ class TeacherTaskService:
     def get_available_classes(school_id, admin_profile):
         """Get all available classes for a school"""
         try:
+            from superadmin.models import SchoolClass, Class
             school = School.objects.get(id=school_id)
             
             if not admin_profile.has_school_access(school):
                 raise ValidationError("You don't have access to this school")
             
-            classes = Class.objects.filter(school=school, is_active=True).order_by('grade', 'section')
+            # Use SchoolClass mapping to get classes for this school
+            school_classes = SchoolClass.objects.filter(
+                school=school, is_active=True
+            ).select_related('class_obj').order_by('class_obj__grade_number', 'section')
+            
+            # Return Class template IDs (to match TeacherClassAssignment.school_class FK)
+            # but include SchoolClass info for display
             return [
                 {
-                    'id': str(c.id),
-                    'name': c.full_name,
-                    'grade': c.grade,
-                    'section': c.section,
-                    'academic_year': c.academic_year
+                    'id': str(sc.class_obj.id),  # Class template ID (for FK matching)
+                    'school_class_id': str(sc.id),  # SchoolClass ID (for reference)
+                    'name': sc.full_name,
+                    'grade': sc.class_obj.grade_number,
+                    'section': sc.section or '',
+                    'academic_year': sc.academic_year
                 }
-                for c in classes
+                for sc in school_classes
             ]
         except School.DoesNotExist:
             raise ValidationError("School not found")
@@ -2514,10 +2583,11 @@ class AttendanceService:
         """
         from students.models import StudentProfile
         from teachers.models import Attendance
+        from superadmin.models import SchoolClass
         from datetime import datetime
         
         try:
-            school_class = Class.objects.get(id=class_id)
+            school_class = SchoolClass.objects.select_related('school', 'class_obj').get(id=class_id)
             
             # Verify admin has access
             if not admin_profile.has_school_access(school_class.school):
@@ -2594,10 +2664,11 @@ class AttendanceService:
         """
         from students.models import StudentProfile
         from teachers.models import Attendance, TeacherProfile
+        from superadmin.models import SchoolClass
         from datetime import datetime
         
         try:
-            school_class = Class.objects.get(id=class_id)
+            school_class = SchoolClass.objects.select_related('school', 'class_obj').get(id=class_id)
             
             # Verify admin has access
             if not admin_profile.has_school_access(school_class.school):
@@ -2703,11 +2774,12 @@ class AttendanceService:
             dict: Attendance summary
         """
         from teachers.models import Attendance
+        from superadmin.models import SchoolClass
         from datetime import datetime
         from django.db.models import Count, Q
         
         try:
-            school_class = Class.objects.get(id=class_id)
+            school_class = SchoolClass.objects.select_related('school', 'class_obj').get(id=class_id)
             
             if not admin_profile.has_school_access(school_class.school):
                 raise ValidationError("You don't have access to this class")

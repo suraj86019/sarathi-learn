@@ -233,23 +233,73 @@ class Subject(models.Model):
 
 class Class(models.Model):
     """
-    Class Model
-    Represents classes/grades in schools
+    Class Model (Template)
+    Represents standard classes (Grade 1-12) that can be assigned to any school
+    Subjects are linked to classes
+    """
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Class Information
+    grade_number = models.IntegerField(unique=True, help_text="Grade/Class number (1-12)")
+    name = models.CharField(max_length=50, help_text="Display name (e.g., 'Class 5', '5th Standard')")
+    description = models.TextField(blank=True, null=True)
+    
+    # Subjects for this class
+    subjects = models.ManyToManyField(
+        Subject,
+        through='ClassSubject',
+        through_fields=('class_obj', 'subject'),
+        related_name='classes',
+        blank=True,
+        help_text="Subjects taught in this class"
+    )
+    
+    # Status
+    is_active = models.BooleanField(default=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'classes'
+        verbose_name = 'Class'
+        verbose_name_plural = 'Classes'
+        ordering = ['grade_number']
+    
+    def __str__(self):
+        return f"Class {self.grade_number}"
+    
+    @property
+    def full_name(self):
+        return self.name or f"Class {self.grade_number}"
+
+
+class SchoolClass(models.Model):
+    """
+    Mapping between School and Class
+    Links which classes a school offers
+    Example: School A -> Class 1, Class 2, Class 5
+             School B -> Class 5, Class 6, Class 7
     """
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     school = models.ForeignKey(
         School,
         on_delete=models.CASCADE,
-        related_name='classes'
+        related_name='school_classes'
+    )
+    class_obj = models.ForeignKey(
+        Class,
+        on_delete=models.CASCADE,
+        related_name='school_classes'
     )
     
-    # Class Information
-    name = models.CharField(max_length=50, help_text="Class name (e.g., '10th Standard', 'Class 5')")
-    grade = models.IntegerField(help_text="Grade number (1-12)")
-    section = models.CharField(max_length=10, help_text="Section (e.g., 'A', 'B', 'C')")
+    # Optional: Section for this school's class
+    section = models.CharField(max_length=10, blank=True, null=True, help_text="Section (e.g., 'A', 'B', 'C')")
     
-    # Class Details
+    # Class Details (school-specific)
     class_teacher = models.ForeignKey(
         'teachers.TeacherProfile',
         on_delete=models.SET_NULL,
@@ -263,7 +313,7 @@ class Class(models.Model):
     current_students = models.IntegerField(default=0, help_text="Current number of students")
     
     # Academic Year
-    academic_year = models.CharField(max_length=20, help_text="e.g., '2024-2025'")
+    academic_year = models.CharField(max_length=20, default='2024-2025', help_text="e.g., '2024-2025'")
     
     # Status
     is_active = models.BooleanField(default=True)
@@ -273,34 +323,76 @@ class Class(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        db_table = 'classes'
-        verbose_name = 'Class'
-        verbose_name_plural = 'Classes'
-        unique_together = ('school', 'grade', 'section', 'academic_year')
-        ordering = ['school', 'grade', 'section']
-        indexes = [
-            models.Index(fields=['school', 'grade']),
-            models.Index(fields=['school', 'academic_year']),
-            models.Index(fields=['grade', 'section']),
-        ]
+        db_table = 'school_classes'
+        verbose_name = 'School Class'
+        verbose_name_plural = 'School Classes'
+        unique_together = ('school', 'class_obj', 'section', 'academic_year')
+        ordering = ['school', 'class_obj__grade_number', 'section']
     
     def __str__(self):
-        return f"{self.school.name} - Grade {self.grade} Section {self.section}"
+        section_str = f" Section {self.section}" if self.section else ""
+        return f"{self.school.name} - Class {self.class_obj.grade_number}{section_str}"
     
     @property
     def full_name(self):
-        """Get full class name"""
-        return f"Grade {self.grade} - Section {self.section}"
+        section_str = f" - Section {self.section}" if self.section else ""
+        return f"Class {self.class_obj.grade_number}{section_str}"
     
     @property
     def is_full(self):
-        """Check if class is at capacity"""
         return self.current_students >= self.max_students
     
     @property
     def available_seats(self):
-        """Get number of available seats"""
         return max(0, self.max_students - self.current_students)
+    
+    @property
+    def subjects(self):
+        """Get subjects from the class template"""
+        return self.class_obj.subjects.all()
+
+
+class ClassSubject(models.Model):
+    """
+    Join table between Class and Subject
+    Allows attaching many subjects to a class and tracking if they are core
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    class_obj = models.ForeignKey(
+        Class,
+        on_delete=models.CASCADE,
+        related_name='class_subjects'
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.CASCADE,
+        related_name='class_subjects'
+    )
+    is_core = models.BooleanField(default=True)
+    is_mandatory = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
+    credits = models.IntegerField(default=0)
+    weekly_hours = models.IntegerField(default=0)
+    display_order = models.PositiveIntegerField(default=0)
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'class_subjects'
+        verbose_name = 'Class Subject'
+        verbose_name_plural = 'Class Subjects'
+        unique_together = ('class_obj', 'subject')
+        ordering = ['class_obj', 'display_order', 'subject']
+        indexes = [
+            models.Index(fields=['class_obj', 'subject']),
+            models.Index(fields=['subject']),
+        ]
+
+    def __str__(self):
+        return f"{self.class_obj.full_name} -> {self.subject.name}"
 
 
 class SuperAdminProfile(models.Model):
