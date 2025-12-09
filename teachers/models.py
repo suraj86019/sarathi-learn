@@ -64,6 +64,7 @@ class TeacherProfile(models.Model):
     can_mark_attendance = models.BooleanField(default=True)
     can_assign_homework = models.BooleanField(default=True)
     can_grade_assignments = models.BooleanField(default=True)
+    can_update_pii = models.BooleanField(default=False, help_text="Can update student Personally Identifiable Information")
     
     # Primary Class for Attendance (the class this teacher takes attendance for)
     attendance_class = models.ForeignKey(
@@ -426,6 +427,88 @@ class TeacherTaskReply(models.Model):
     
     def __str__(self):
         return f"Reply by {self.replied_by.get_full_name() if self.replied_by else 'Unknown'} on {self.task.title}"
+
+
+class StudentTask(models.Model):
+    """
+    Student Task
+    Tasks/notes created by teachers for students
+    """
+    
+    STATUS_CHOICES = [
+        ('OPEN', 'Open'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('COMPLETED', 'Completed'),
+        ('CLOSED', 'Closed'),
+    ]
+    
+    PRIORITY_CHOICES = [
+        ('LOW', 'Low'),
+        ('MEDIUM', 'Medium'),
+        ('HIGH', 'High'),
+        ('URGENT', 'Urgent'),
+    ]
+    
+    TYPE_CHOICES = [
+        ('TASK', 'Task'),
+        ('NOTE', 'Note'),
+        ('REMINDER', 'Reminder'),
+        ('HOMEWORK', 'Homework'),
+        ('FOLLOWUP', 'Follow-up'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Task Details
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    task_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='TASK')
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='MEDIUM')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='OPEN')
+    
+    # Student Reference
+    student = models.ForeignKey(
+        'students.StudentProfile',
+        on_delete=models.CASCADE,
+        related_name='student_tasks'
+    )
+    
+    # Created By (Teacher)
+    created_by = models.ForeignKey(
+        TeacherProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_student_tasks'
+    )
+    
+    # School Reference
+    school = models.ForeignKey(
+        'superadmin.School',
+        on_delete=models.CASCADE,
+        related_name='student_tasks'
+    )
+    
+    # Dates
+    due_date = models.DateField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'student_tasks'
+        verbose_name = 'Student Task'
+        verbose_name_plural = 'Student Tasks'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['student', 'status']),
+            models.Index(fields=['created_by', '-created_at']),
+            models.Index(fields=['school', 'status']),
+        ]
+    
+    def __str__(self):
+        return f"{self.title} - {self.student.user.get_full_name()}"
 
 
 class SchoolHoliday(models.Model):

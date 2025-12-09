@@ -171,12 +171,32 @@ export interface Notification {
 export interface CreateNotificationData {
   title: string;
   message: string;
-  notification_type: 'EMAIL' | 'SMS' | 'BOTH';
+  notification_type: 'IN_APP' | 'EMAIL' | 'SMS' | 'BOTH';
   target_schools?: string[];
   school_target_roles?: ('STUDENT' | 'TEACHER' | 'ADMIN')[];
   target_users?: string[];
   scheduled_date?: string;
   priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+}
+
+// User Notifications (bell notifications)
+export interface UserNotification {
+  id: string;
+  title: string;
+  content: string;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  target_type: 'user' | 'school';
+  target_school: string | null;
+  created_at: string;
+  published_at: string | null;
+  created_by: string;
+}
+
+export interface UserNotificationsResponse {
+  notifications: UserNotification[];
+  count: number;
+  user_role: string;
+  schools: { id: string; name: string }[];
 }
 
 export interface Task {
@@ -470,11 +490,22 @@ const adminDashboardService = {
     return response.data;
   },
 
-  async sendNotification(id: string, notificationType: 'EMAIL' | 'SMS' | 'BOTH' = 'EMAIL'): Promise<any> {
+  async sendNotification(id: string, notificationType: 'IN_APP' | 'EMAIL' | 'SMS' | 'BOTH' = 'IN_APP'): Promise<any> {
     const response = await api.post<{ success: boolean; data: any }>(`/admin/notifications/${id}/send/`, {
       notification_type: notificationType
     });
     return response.data.data;
+  },
+
+  // User Notifications (Bell Notifications - for all users)
+  async getMyNotifications(days: number = 7): Promise<UserNotificationsResponse> {
+    const response = await api.get<{ success: boolean; data: UserNotificationsResponse }>(`/admin/notifications/my/?days=${days}`);
+    return response.data.data;
+  },
+
+  async getUnreadNotificationsCount(): Promise<number> {
+    const response = await api.get<{ success: boolean; data: { unread_count: number } }>('/admin/notifications/unread-count/');
+    return response.data.data.unread_count;
   },
 
   // ============ TASKS ============

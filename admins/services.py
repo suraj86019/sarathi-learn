@@ -68,9 +68,16 @@ class NotificationService:
                     announcement.save()
                 else:
                     # Send immediately
-                    total_target_users = NotificationService._send_to_all_targets(
-                        announcement, data['notification_type']
-                    )
+                    notification_type = data.get('notification_type', 'IN_APP')
+                    
+                    if notification_type == 'IN_APP':
+                        # In-app only - just publish for bell notification, no email/SMS
+                        total_target_users = NotificationService._count_target_users(announcement)
+                    else:
+                        # Send via email/SMS
+                        total_target_users = NotificationService._send_to_all_targets(
+                            announcement, notification_type
+                        )
                     announcement.publish()
 
                 return {
@@ -335,6 +342,24 @@ class NotificationService:
         return targets_created
 
     @staticmethod
+    def _count_target_users(announcement):
+        """Count total target users without sending (for IN_APP notifications)"""
+        total_count = 0
+
+        for target in announcement.targets.all():
+            try:
+                users = target.get_target_users()
+                total_count += len(users)
+                # Mark as delivered (in-app) without actually sending external notifications
+                target.is_sent = True
+                target.sent_at = timezone.now()
+                target.save()
+            except Exception as e:
+                logger.error(f"Error counting users for target {target.id}: {str(e)}")
+
+        return total_count
+
+    @staticmethod
     def _send_to_all_targets(announcement, notification_type):
         """Send notification to all targets"""
         total_sent = 0
@@ -393,6 +418,138 @@ class NotificationService:
         """Send SMS notification (placeholder for SMS service integration)"""
         # TODO: Integrate with SMS service like Twilio, AWS SNS, etc.
         logger.info(f"SMS to {user.phone}: {announcement.title}")
+
+    @staticmethod
+    def get_user_notifications(user, days=7):
+        """
+        Get notifications for a user from the last N days based on their role.
+        
+        - Admin: User-level + School-level notifications for schools they manage
+        - Teacher: User-level + School-level notifications for their school
+        - Student: User-level + School-level notifications for their school
+        
+        Args:
+            user: User instance
+            days: Number of days to look back (default 7)
+            
+        Returns:
+            list: List of notification dictionaries
+        """
+        from datetime import timedelta
+        from django.db.models import Q
+        from superadmin.models import Announcement, AnnouncementTarget
+        from teachers.models import TeacherProfile
+        from students.models import StudentProfile
+        
+        # Calculate date threshold
+        date_threshold = timezone.now() - timedelta(days=days)
+        
+        # Get user's role
+        user_role = getattr(user, 'user_role', None)
+        role_type = user_role.role_type if user_role else None
+        
+        # Build query for announcements
+        # Start with user-level notifications (targeted directly at this user)
+        user_targets = AnnouncementTarget.objects.filter(user=user)
+        
+        # Get school-level notifications based on role
+        school_targets = AnnouncementTarget.objects.none()
+        user_schools = []
+        
+        def filter_by_role(queryset, role):
+            """Filter targets by role - SQLite compatible"""
+            # Get all targets for the school(s) first
+            all_targets = list(queryset)
+            filtered_ids = []
+            
+            for target in all_targets:
+                # Include if target_roles is empty (all roles) or contains the user's role
+                if not target.target_roles or role in target.target_roles:
+                    filtered_ids.append(target.id)
+            
+            return AnnouncementTarget.objects.filter(id__in=filtered_ids)
+        
+        if role_type == 'ADMIN':
+            # Admin: Get all schools they manage
+            try:
+                admin_profile = AdminProfile.objects.get(user=user)
+                user_schools = list(admin_profile.schools.all())
+                
+                if user_schools:
+                    # Get school-level notifications filtered by role
+                    base_targets = AnnouncementTarget.objects.filter(school__in=user_schools)
+                    school_targets = filter_by_role(base_targets, 'ADMIN')
+            except AdminProfile.DoesNotExist:
+                pass
+                
+        elif role_type == 'TEACHER':
+            # Teacher: Get their school
+            try:
+                teacher_profile = TeacherProfile.objects.select_related('school').get(user=user)
+                if teacher_profile.school:
+                    user_schools = [teacher_profile.school]
+                    
+                    # Get school-level notifications filtered by role
+                    base_targets = AnnouncementTarget.objects.filter(school=teacher_profile.school)
+                    school_targets = filter_by_role(base_targets, 'TEACHER')
+            except TeacherProfile.DoesNotExist:
+                pass
+                
+        elif role_type == 'STUDENT':
+            # Student: Get their school
+            try:
+                student_profile = StudentProfile.objects.select_related('school').get(user=user)
+                if student_profile.school:
+                    user_schools = [student_profile.school]
+                    
+                    # Get school-level notifications filtered by role
+                    base_targets = AnnouncementTarget.objects.filter(school=student_profile.school)
+                    school_targets = filter_by_role(base_targets, 'STUDENT')
+            except StudentProfile.DoesNotExist:
+                pass
+        
+        # Combine user-level and school-level targets
+        all_target_ids = set(user_targets.values_list('announcement_id', flat=True)) | \
+                         set(school_targets.values_list('announcement_id', flat=True))
+        
+        # Get published announcements from last N days
+        announcements = Announcement.objects.filter(
+            id__in=all_target_ids,
+            status='PUBLISHED',
+            created_at__gte=date_threshold
+        ).order_by('-created_at')
+        
+        # Format response
+        notifications = []
+        for announcement in announcements:
+            # Determine target type for this notification
+            target_type = 'user'
+            target_school = None
+            
+            # Check if this is a school-level notification
+            school_target = announcement.targets.filter(school__isnull=False).first()
+            if school_target and school_target.school in user_schools:
+                target_type = 'school'
+                target_school = school_target.school.name
+            
+            notifications.append({
+                'id': str(announcement.id),
+                'title': announcement.title,
+                'content': announcement.content,
+                'priority': announcement.priority,
+                'target_type': target_type,
+                'target_school': target_school,
+                'created_at': announcement.created_at.isoformat(),
+                'published_at': announcement.published_at.isoformat() if announcement.published_at else None,
+                'created_by': announcement.created_by.get_full_name() if announcement.created_by else 'System'
+            })
+        
+        return {
+            'notifications': notifications,
+            'count': len(notifications),
+            'user_role': role_type,
+            'schools': [{'id': str(s.id), 'name': s.name} for s in user_schools]
+        }
 
 
 class TaskService:

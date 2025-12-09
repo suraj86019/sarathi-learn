@@ -64,7 +64,7 @@ export default function NotificationsList({ onBack, schools = [] }: Notification
     }
   };
 
-  const handleSendNotification = async (id: string, notificationType: 'EMAIL' | 'SMS' | 'BOTH' = 'EMAIL') => {
+  const handleSendNotification = async (id: string, notificationType: 'IN_APP' | 'EMAIL' | 'SMS' | 'BOTH' = 'IN_APP') => {
     try {
       setActionLoading(id);
       await adminDashboardService.sendNotification(id, notificationType);
@@ -306,10 +306,10 @@ export default function NotificationsList({ onBack, schools = [] }: Notification
                             <Edit3 className="w-4 h-4 sm:w-5 sm:h-5" />
                           </button>
                           <button
-                            onClick={() => handleSendNotification(notification.id, 'EMAIL')}
+                            onClick={() => handleSendNotification(notification.id, 'IN_APP')}
                             disabled={actionLoading === notification.id}
                             className="p-1.5 sm:p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-50"
-                            title="Send Now"
+                            title="Publish Now"
                           >
                             {actionLoading === notification.id ? (
                               <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
@@ -547,7 +547,7 @@ export default function NotificationsList({ onBack, schools = [] }: Notification
                     Edit
                   </button>
                   <button
-                    onClick={() => handleSendNotification(selectedNotification.id, 'EMAIL')}
+                    onClick={() => handleSendNotification(selectedNotification.id, 'IN_APP')}
                     disabled={actionLoading === selectedNotification.id}
                     className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-colors font-medium shadow-lg disabled:opacity-50 text-xs sm:text-sm"
                   >

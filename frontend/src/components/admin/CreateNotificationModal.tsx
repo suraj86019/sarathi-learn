@@ -20,7 +20,7 @@ export default function CreateNotificationModal({ isOpen, onClose, onSuccess, sc
   const [formData, setFormData] = useState<CreateNotificationData>({
     title: '',
     message: '',
-    notification_type: 'EMAIL',
+    notification_type: 'IN_APP',
     target_schools: [],
     school_target_roles: [],
     scheduled_date: '',
@@ -103,7 +103,7 @@ export default function CreateNotificationModal({ isOpen, onClose, onSuccess, sc
       setFormData({
         title: '',
         message: '',
-        notification_type: 'EMAIL',
+        notification_type: 'IN_APP',
         target_schools: [],
         school_target_roles: [],
         scheduled_date: '',
@@ -175,44 +175,62 @@ export default function CreateNotificationModal({ isOpen, onClose, onSuccess, sc
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
-                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5 sm:mb-2">Send Via *</label>
-                    <div className="flex gap-1.5 sm:gap-2">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5 sm:mb-2">Notification Type</label>
+                    <div className="grid grid-cols-2 gap-1.5 sm:gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, notification_type: 'IN_APP' }))}
+                        className={`flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-3 rounded-lg border-2 transition-all text-xs sm:text-sm ${
+                          formData.notification_type === 'IN_APP'
+                            ? 'border-purple-500 bg-purple-50 text-purple-700'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <span>Bell Only</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, notification_type: 'EMAIL' }))}
-                        className={`flex-1 flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-3 rounded-lg border-2 transition-all text-xs sm:text-sm ${
+                        className={`flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-3 rounded-lg border-2 transition-all text-xs sm:text-sm ${
                           formData.notification_type === 'EMAIL'
-                            ? 'border-purple-500 bg-purple-50 text-purple-700'
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <Mail className="w-4 h-4 sm:w-5 sm:h-5" />
-                        <span className="hidden xs:inline">Email</span>
+                        <span>Email</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, notification_type: 'SMS' }))}
-                        className={`flex-1 flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-3 rounded-lg border-2 transition-all text-xs sm:text-sm ${
+                        className={`flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-3 rounded-lg border-2 transition-all text-xs sm:text-sm ${
                           formData.notification_type === 'SMS'
-                            ? 'border-purple-500 bg-purple-50 text-purple-700'
+                            ? 'border-green-500 bg-green-50 text-green-700'
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
-                        <span className="hidden xs:inline">SMS</span>
+                        <span>SMS</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, notification_type: 'BOTH' }))}
-                        className={`flex-1 flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-3 rounded-lg border-2 transition-all text-xs sm:text-sm ${
+                        className={`flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-3 rounded-lg border-2 transition-all text-xs sm:text-sm ${
                           formData.notification_type === 'BOTH'
-                            ? 'border-purple-500 bg-purple-50 text-purple-700'
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
-                        Both
+                        <span>Email + SMS</span>
                       </button>
                     </div>
+                    <p className="text-[10px] sm:text-xs text-gray-500">
+                      {formData.notification_type === 'IN_APP' && '📢 Shows in bell notification only (no email/SMS sent)'}
+                      {formData.notification_type === 'EMAIL' && '📧 Sends email + shows in bell notification'}
+                      {formData.notification_type === 'SMS' && '💬 Sends SMS + shows in bell notification'}
+                      {formData.notification_type === 'BOTH' && '📧💬 Sends both email & SMS + shows in bell notification'}
+                    </p>
                   </div>
 
                   <div>

@@ -13,7 +13,15 @@ router.register(r'profile', views.AdminProfileViewSet, basename='admin-profile')
 urlpatterns = [
     path('', include(router.urls)),
 
-    # Notification management
+    # User Notifications (for all authenticated users - bell notifications)
+    path('notifications/my/', views.UserNotificationViewSet.as_view({
+        'get': 'my_notifications'
+    }), name='my-notifications'),
+    path('notifications/unread-count/', views.UserNotificationViewSet.as_view({
+        'get': 'unread_count'
+    }), name='unread-notifications-count'),
+
+    # Notification management (admin only)
     path('notifications/', views.NotificationViewSet.as_view({
         'post': 'create_notification'
     }), name='create-notification'),

@@ -46,6 +46,49 @@ class AdminProfileViewSet(viewsets.ModelViewSet):
         return AdminProfile.objects.filter(user=self.request.user)
 
 
+class UserNotificationViewSet(viewsets.ViewSet):
+    """
+    ViewSet for User Notifications - accessible by all authenticated users
+    Returns notifications relevant to the user based on their role:
+    - Admin: User-level + School-level notifications for schools they manage
+    - Teacher: User-level + School-level notifications for their school
+    - Student: User-level + School-level notifications for their school
+    """
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['get'])
+    def my_notifications(self, request):
+        """
+        Get notifications for the current user from the last 7 days.
+        Query params:
+            - days: Number of days to look back (default 7, max 30)
+        """
+        try:
+            # Get days parameter (default 7, max 30)
+            days = min(int(request.query_params.get('days', 7)), 30)
+            
+            result = NotificationService.get_user_notifications(request.user, days=days)
+            
+            return ResponseUtils.create_success_response(
+                f'Found {result["count"]} notifications from the last {days} days',
+                result
+            )
+        except Exception as e:
+            return ResponseUtils.create_error_response(str(e))
+
+    @action(detail=False, methods=['get'])
+    def unread_count(self, request):
+        """Get count of unread/recent notifications (last 24 hours)"""
+        try:
+            result = NotificationService.get_user_notifications(request.user, days=1)
+            return ResponseUtils.create_success_response(
+                'Unread count retrieved',
+                {'unread_count': result['count']}
+            )
+        except Exception as e:
+            return ResponseUtils.create_error_response(str(e))
+
+
 class NotificationViewSet(viewsets.ViewSet):
     """
     ViewSet for Notification management

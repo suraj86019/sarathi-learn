@@ -72,11 +72,15 @@ class NotificationSerializer(serializers.Serializer):
 
     title = serializers.CharField(max_length=255)
     message = serializers.CharField()
-    notification_type = serializers.ChoiceField(choices=[
-        ('EMAIL', 'Email'),
-        ('SMS', 'SMS'),
-        ('BOTH', 'Email and SMS')
-    ])
+    notification_type = serializers.ChoiceField(
+        choices=[
+            ('IN_APP', 'In-App Only (Bell Notification)'),
+            ('EMAIL', 'Email'),
+            ('SMS', 'SMS'),
+            ('BOTH', 'Email and SMS')
+        ],
+        default='IN_APP'
+    )
 
     # Targeting options - flexible approach
     # School-level targeting

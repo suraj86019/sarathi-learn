@@ -32,6 +32,7 @@ import AddStudentModal from '../../components/admin/AddStudentModal';
 import AddTeacherModal from '../../components/admin/AddTeacherModal';
 import CreateNotificationModal from '../../components/admin/CreateNotificationModal';
 import CreateTaskModal from '../../components/admin/CreateTaskModal';
+import NotificationsDropdown from '../../components/admin/NotificationsDropdown';
 
 type ActiveView = 'dashboard' | 'schools' | 'teachers' | 'students' | 'classes' | 'subjects' | 'notifications' | 'tasks' | 'payments' | 'activities' | 'reports' | 'settings';
 
@@ -594,15 +595,9 @@ export default function AdminDashboard() {
             </div>
 
             <div className="flex items-center space-x-2 sm:space-x-4">
-              <button 
-                onClick={() => setShowCreateNotification(true)}
-                className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <Bell className="w-5 h-5 sm:w-6 sm:h-6" />
-                {dashboardData?.notifications_count && dashboardData.notifications_count > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                )}
-              </button>
+              <NotificationsDropdown 
+                onCreateNotification={() => setShowCreateNotification(true)}
+              />
               <button 
                 onClick={handleLogout}
                 className="hidden sm:flex items-center space-x-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 px-3 py-2 rounded-lg transition-colors"
