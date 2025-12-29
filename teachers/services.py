@@ -3,15 +3,17 @@ Teacher Services
 Business logic for teacher-related operations
 """
 
+from django.db import transaction
 from django.db.models import Count, Q, Avg
 from django.utils import timezone
 from datetime import timedelta
 from typing import Optional, Dict, Any, List
 
-from .models import TeacherProfile, Attendance, TeacherTask, TeacherTaskReply, TeacherClassAssignment
-from superadmin.models import Announcement, AnnouncementTarget, School, SchoolClass
+from .models import TeacherProfile, Attendance, TeacherTask, TeacherTaskReply, TeacherClassAssignment, Activity, ActivitySubmission
+from superadmin.models import Announcement, AnnouncementTarget, School, SchoolClass, Class, Subject
 from students.models import StudentProfile
 from users.models import User
+from django.core.paginator import Paginator
 
 
 class TeacherDashboardService:
@@ -55,6 +57,7 @@ class TeacherDashboardService:
             'name': profile.user.get_full_name(),
             'email': profile.user.email,
             'phone': profile.user.phone,
+            'address': profile.user.address,
             'employee_id': profile.employee_id,
             'qualification': profile.qualification,
             'experience_years': profile.experience_years,
@@ -103,22 +106,13 @@ class TeacherDashboardService:
     
     def get_news(self, limit: int = 10) -> List[Dict[str, Any]]:
         """
-        Get top news/announcements for the teacher
-        Includes school-level and user-level announcements
+        Get top news items for the teacher
+        News are platform-wide items created by super admin
         """
-        if not self.teacher_profile:
-            return []
+        from superadmin.models import News
         
-        school = self.teacher_profile.school
-        
-        # Get announcement IDs that target this school or this specific user
-        target_announcement_ids = AnnouncementTarget.objects.filter(
-            Q(school=school) | Q(user=self.user)
-        ).values_list('announcement_id', flat=True).distinct()
-        
-        # Get published announcements that target this teacher
-        announcements = Announcement.objects.filter(
-            id__in=target_announcement_ids,
+        # Get published news that haven't expired
+        news_items = News.objects.filter(
             status='PUBLISHED',
             is_active=True
         ).filter(
@@ -127,32 +121,69 @@ class TeacherDashboardService:
         
         return [
             {
-                'id': str(ann.id),
-                'title': ann.title,
-                'content': ann.content,
-                'priority': ann.priority,
-                'published_at': ann.published_at.isoformat() if ann.published_at else None,
-                'created_at': ann.created_at.isoformat(),
-                'created_by': ann.created_by.get_full_name() if ann.created_by else 'System',
+                'id': str(news.id),
+                'title': news.title,
+                'content': news.content,
+                'summary': news.summary,
+                'priority': news.priority,
+                'image_url': news.image_url,
+                'published_at': news.published_at.isoformat() if news.published_at else None,
+                'created_at': news.created_at.isoformat(),
+                'created_by': news.created_by.get_full_name() if news.created_by else 'System',
             }
-            for ann in announcements
+            for news in news_items
         ]
     
     def get_single_news(self, news_id: str) -> Optional[Dict[str, Any]]:
-        """Get a single news/announcement by ID"""
+        """Get a single news item by ID"""
+        from superadmin.models import News
+        
         try:
-            announcement = Announcement.objects.get(id=news_id, status='PUBLISHED', is_active=True)
+            news = News.objects.get(id=news_id, status='PUBLISHED', is_active=True)
             return {
-                'id': str(announcement.id),
-                'title': announcement.title,
-                'content': announcement.content,
-                'priority': announcement.priority,
-                'published_at': announcement.published_at.isoformat() if announcement.published_at else None,
-                'created_at': announcement.created_at.isoformat(),
-                'created_by': announcement.created_by.get_full_name() if announcement.created_by else 'System',
+                'id': str(news.id),
+                'title': news.title,
+                'content': news.content,
+                'summary': news.summary,
+                'priority': news.priority,
+                'image_url': news.image_url,
+                'published_at': news.published_at.isoformat() if news.published_at else None,
+                'created_at': news.created_at.isoformat(),
+                'created_by': news.created_by.get_full_name() if news.created_by else 'System',
             }
-        except Announcement.DoesNotExist:
+        except News.DoesNotExist:
             return None
+    
+    def update_own_profile(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Update teacher's own profile information (phone, email, address)
+        Teachers can only update their own contact info, not name or other fields
+        """
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        try:
+            # Update phone on User model if provided
+            if 'phone' in data:
+                self.user.phone = data['phone']
+            
+            # Update address on User model if provided  
+            if 'address' in data:
+                self.user.address = data['address']
+            
+            # Update email on User model
+            if 'email' in data and data['email']:
+                self.user.email = data['email']
+            
+            self.user.save()
+            
+            return {
+                'phone': self.user.phone,
+                'email': self.user.email,
+                'address': self.user.address,
+            }
+        except Exception as e:
+            return {'error': str(e)}
     
     def _get_dashboard_stats(self) -> Dict[str, Any]:
         """Get dashboard statistics"""
@@ -1049,6 +1080,152 @@ class TeacherStudentService:
             print(f"Error getting student tasks: {e}")
             return []
     
+    def add_student(self, class_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a new student to a class (requires can_update_pii permission)"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        if not self.teacher_profile.can_update_pii:
+            return {'error': 'You do not have permission to add students'}
+        
+        from users.models import User, UserRole
+        from superadmin.models import Class
+        
+        try:
+            # Get the class
+            class_obj = Class.objects.get(id=class_id)
+            
+            # Required fields
+            first_name = data.get('first_name', '').strip()
+            last_name = data.get('last_name', '').strip()
+            
+            if not first_name:
+                return {'error': 'First name is required'}
+            
+            # Generate email/username
+            email = data.get('email', '').strip()
+            if not email:
+                # Generate unique email
+                import uuid
+                unique_id = str(uuid.uuid4())[:8]
+                email = f"student_{unique_id}@{self.teacher_profile.school.udise_code}.edu"
+            
+            # Check if email exists
+            if User.objects.filter(email=email).exists():
+                return {'error': 'A user with this email already exists'}
+            
+            with transaction.atomic():
+                # Create user
+                user = User.objects.create(
+                    email=email,
+                    first_name=first_name,
+                    last_name=last_name,
+                    phone=data.get('phone', ''),
+                    status='ACTIVE',
+                    is_active=True,
+                )
+                
+                # Set date of birth as password (for students)
+                date_of_birth = data.get('date_of_birth')
+                if date_of_birth:
+                    from datetime import datetime
+                    dob = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
+                    user.date_of_birth = dob
+                    user.set_password(dob.strftime('%d%m%Y'))
+                else:
+                    user.set_password('student123')
+                user.save()
+                
+                # Create user role
+                UserRole.objects.create(user=user, role_type='STUDENT')
+                
+                # Create student profile
+                student = StudentProfile.objects.create(
+                    user=user,
+                    school=self.teacher_profile.school,
+                    current_class=class_obj,
+                    roll_no=data.get('roll_no', ''),
+                    parent_name=data.get('parent_name', ''),
+                    parent_phone=data.get('parent_phone', ''),
+                    parent_email=data.get('parent_email', ''),
+                    enrollment_date=timezone.now().date(),
+                    academic_year=data.get('academic_year', '2024-2025'),
+                )
+                
+                return {
+                    'success': True,
+                    'student': {
+                        'id': str(student.id),
+                        'name': user.get_full_name(),
+                        'email': user.email,
+                        'roll_no': student.roll_no,
+                        'class': class_obj.full_name,
+                    }
+                }
+                
+        except Class.DoesNotExist:
+            return {'error': 'Class not found'}
+        except Exception as e:
+            return {'error': f'Failed to create student: {str(e)}'}
+    
+    def update_student_details(self, student_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update student details (requires can_update_pii permission)"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        if not self.teacher_profile.can_update_pii:
+            return {'error': 'You do not have permission to edit student details'}
+        
+        try:
+            student = StudentProfile.objects.select_related('user').get(id=student_id)
+            
+            # Verify same school
+            if student.school_id != self.teacher_profile.school_id:
+                return {'error': 'Access denied'}
+            
+            with transaction.atomic():
+                # Update user fields
+                if 'first_name' in data:
+                    student.user.first_name = data['first_name']
+                if 'last_name' in data:
+                    student.user.last_name = data['last_name']
+                if 'phone' in data:
+                    student.user.phone = data['phone']
+                if 'date_of_birth' in data and data['date_of_birth']:
+                    from datetime import datetime
+                    student.user.date_of_birth = datetime.strptime(data['date_of_birth'], '%Y-%m-%d').date()
+                
+                student.user.save()
+                
+                # Update student profile fields
+                if 'roll_no' in data:
+                    student.roll_no = data['roll_no']
+                if 'parent_name' in data:
+                    student.parent_name = data['parent_name']
+                if 'parent_phone' in data:
+                    student.parent_phone = data['parent_phone']
+                if 'parent_email' in data:
+                    student.parent_email = data['parent_email']
+                if 'class_id' in data and data['class_id']:
+                    from superadmin.models import Class
+                    student.current_class = Class.objects.get(id=data['class_id'])
+                
+                student.save()
+                
+                return {
+                    'success': True,
+                    'student': {
+                        'id': str(student.id),
+                        'name': student.user.get_full_name(),
+                        'roll_no': student.roll_no,
+                    }
+                }
+                
+        except StudentProfile.DoesNotExist:
+            return {'error': 'Student not found'}
+        except Exception as e:
+            return {'error': f'Failed to update student: {str(e)}'}
+    
     def create_student_task(self, student_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a task for a student"""
         if not self.teacher_profile:
@@ -1119,6 +1296,107 @@ class TeacherStudentService:
             return {'error': 'Task not found'}
         except Exception as e:
             print(f"Error updating student task: {e}")
+            return {'error': str(e)}
+    
+    def get_student_task_detail(self, task_id: str) -> Dict[str, Any]:
+        """Get a single task with all replies"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        try:
+            from teachers.models import StudentTask, StudentTaskReply
+            
+            task = StudentTask.objects.select_related(
+                'student', 'student__user', 'created_by', 'created_by__user'
+            ).prefetch_related('replies', 'replies__replied_by').get(
+                id=task_id,
+                school=self.teacher_profile.school
+            )
+            
+            return {
+                'success': True,
+                'task': {
+                    'id': str(task.id),
+                    'title': task.title,
+                    'description': task.description,
+                    'task_type': task.task_type,
+                    'priority': task.priority,
+                    'status': task.status,
+                    'due_date': task.due_date.isoformat() if task.due_date else None,
+                    'completed_at': task.completed_at.isoformat() if task.completed_at else None,
+                    'created_by': {
+                        'id': str(task.created_by.id) if task.created_by else None,
+                        'name': task.created_by.user.get_full_name() if task.created_by else 'Unknown',
+                    },
+                    'student': {
+                        'id': str(task.student.id),
+                        'name': task.student.user.get_full_name(),
+                    },
+                    'created_at': task.created_at.isoformat(),
+                    'is_mine': task.created_by == self.teacher_profile if task.created_by else False,
+                    'replies': [
+                        {
+                            'id': str(reply.id),
+                            'content': reply.content,
+                            'reply_type': reply.reply_type,
+                            'replied_by': {
+                                'id': str(reply.replied_by.id) if reply.replied_by else None,
+                                'name': reply.replied_by.get_full_name() if reply.replied_by else 'Unknown',
+                            },
+                            'created_at': reply.created_at.isoformat(),
+                        }
+                        for reply in task.replies.all().order_by('created_at')
+                    ],
+                }
+            }
+        except StudentTask.DoesNotExist:
+            return {'error': 'Task not found'}
+        except Exception as e:
+            print(f"Error getting student task detail: {e}")
+            return {'error': str(e)}
+    
+    def add_student_task_reply(self, task_id: str, content: str) -> Dict[str, Any]:
+        """Add a reply to a student task"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        if not content or not content.strip():
+            return {'error': 'Content is required'}
+        
+        try:
+            from teachers.models import StudentTask, StudentTaskReply
+            
+            task = StudentTask.objects.get(id=task_id, school=self.teacher_profile.school)
+            
+            reply = StudentTaskReply.objects.create(
+                task=task,
+                content=content.strip(),
+                reply_type='TEACHER',
+                replied_by=self.user,
+            )
+            
+            # Update task status to IN_PROGRESS if it was OPEN
+            if task.status == 'OPEN':
+                task.status = 'IN_PROGRESS'
+                task.save()
+            
+            return {
+                'success': True,
+                'reply': {
+                    'id': str(reply.id),
+                    'content': reply.content,
+                    'reply_type': reply.reply_type,
+                    'replied_by': {
+                        'id': str(reply.replied_by.id) if reply.replied_by else None,
+                        'name': reply.replied_by.get_full_name() if reply.replied_by else 'Unknown',
+                    },
+                    'created_at': reply.created_at.isoformat(),
+                }
+            }
+        except StudentTask.DoesNotExist:
+            return {'error': 'Task not found'}
+        except Exception as e:
+            print(f"Error adding student task reply: {e}")
             return {'error': str(e)}
     
     def update_student_pii(self, student_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1268,4 +1546,1270 @@ class TeacherStudentService:
                 'attendance_percentage': attendance_percentage,
             }
         }
+
+
+class TeacherActivityService:
+    """Service for teacher activity operations"""
+    
+    def __init__(self, user: User):
+        self.user = user
+        self.teacher_profile = self._get_teacher_profile()
+    
+    def _get_teacher_profile(self) -> Optional[TeacherProfile]:
+        """Get the teacher profile for the current user"""
+        try:
+            return TeacherProfile.objects.select_related('school', 'user', 'attendance_class').get(user=self.user)
+        except TeacherProfile.DoesNotExist:
+            return None
+    
+    def get_classes_for_activities(self) -> List[Dict[str, Any]]:
+        """Get all classes assigned to this teacher for creating activities"""
+        if not self.teacher_profile:
+            return []
+        
+        classes = {}
+        
+        # 1. Get classes from teacher's attendance_class (primary class assignment)
+        if self.teacher_profile.attendance_class:
+            class_obj = self.teacher_profile.attendance_class
+            student_count = StudentProfile.objects.filter(
+                school=self.teacher_profile.school,
+                current_class=class_obj
+            ).count()
+            
+            # Get only subjects assigned to THIS teacher for this class
+            teacher_subjects = TeacherClassAssignment.objects.filter(
+                teacher=self.teacher_profile,
+                school_class=class_obj,
+                is_active=True
+            ).select_related('subject')
+            
+            # If teacher has no specific subject assignments for this class, 
+            # get subjects from their teacher_subjects
+            if not teacher_subjects.exists():
+                from teachers.models import TeacherSubject
+                teacher_subject_objs = TeacherSubject.objects.filter(
+                    teacher=self.teacher_profile
+                ).select_related('subject')
+                subject_list = [
+                    {
+                        'id': str(ts.subject.id),
+                        'name': ts.subject.name,
+                        'code': ts.subject.code,
+                    }
+                    for ts in teacher_subject_objs
+                ]
+            else:
+                subject_list = [
+                    {
+                        'id': str(ta.subject.id),
+                        'name': ta.subject.name,
+                        'code': ta.subject.code,
+                    }
+                    for ta in teacher_subjects
+                ]
+            
+            classes[str(class_obj.id)] = {
+                'id': str(class_obj.id),
+                'name': class_obj.name,
+                'section': getattr(class_obj, 'section', ''),
+                'full_name': class_obj.full_name,
+                'student_count': student_count,
+                'subjects': subject_list
+            }
+        
+        # 2. Get classes from teacher assignments (additional class assignments)
+        assignments = TeacherClassAssignment.objects.filter(
+            teacher=self.teacher_profile,
+            is_active=True
+        ).select_related('school_class', 'subject')
+        
+        for assignment in assignments:
+            class_obj = assignment.school_class
+            if str(class_obj.id) not in classes:
+                # Count students in this class
+                student_count = StudentProfile.objects.filter(
+                    school=self.teacher_profile.school,
+                    current_class=class_obj
+                ).count()
+                
+                classes[str(class_obj.id)] = {
+                    'id': str(class_obj.id),
+                    'name': class_obj.name,
+                    'section': getattr(class_obj, 'section', ''),
+                    'full_name': class_obj.full_name,
+                    'student_count': student_count,
+                    'subjects': []
+                }
+            
+            # Add subject if not already in list
+            subject_ids = [s['id'] for s in classes[str(class_obj.id)]['subjects']]
+            if str(assignment.subject.id) not in subject_ids:
+                classes[str(class_obj.id)]['subjects'].append({
+                    'id': str(assignment.subject.id),
+                    'name': assignment.subject.name,
+                    'code': assignment.subject.code,
+                })
+        
+        return list(classes.values())
+    
+    def get_class_students(self, class_id: str) -> List[Dict[str, Any]]:
+        """Get all students in a class"""
+        if not self.teacher_profile:
+            return []
+        
+        students = StudentProfile.objects.filter(
+            school=self.teacher_profile.school,
+            current_class_id=class_id
+        ).select_related('user', 'current_class').order_by('roll_no', 'user__first_name')
+        
+        return [
+            {
+                'id': str(student.id),
+                'name': student.user.get_full_name(),
+                'roll_no': student.roll_no,
+                'email': student.user.email,
+            }
+            for student in students
+        ]
+    
+    def get_subjects(self) -> List[Dict[str, Any]]:
+        """Get subjects taught by this teacher"""
+        if not self.teacher_profile:
+            return []
+        
+        subjects = Subject.objects.filter(
+            class_teacher_assignments__teacher=self.teacher_profile,
+            class_teacher_assignments__is_active=True
+        ).distinct()
+        
+        return [
+            {
+                'id': str(subject.id),
+                'name': subject.name,
+                'code': subject.code,
+            }
+            for subject in subjects
+        ]
+    
+    def create_activity(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new activity"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        level = data.get('level', 'CLASS')
+        title = data.get('title')
+        description = data.get('description', '')
+        subject_id = data.get('subject_id')
+        class_id = data.get('class_id')
+        student_ids = data.get('student_ids', [])  # For student level activities
+        
+        # Meeting links
+        google_meet_link = data.get('google_meet_link')
+        zoom_link = data.get('zoom_link')
+        other_link = data.get('other_link')
+        link_label = data.get('link_label')
+        
+        # Schedule
+        scheduled_date = data.get('scheduled_date')
+        scheduled_time = data.get('scheduled_time')
+        due_date = data.get('due_date')
+        
+        if not title:
+            return {'error': 'Title is required'}
+        
+        # Get subject if provided
+        subject = None
+        if subject_id:
+            try:
+                subject = Subject.objects.get(id=subject_id)
+            except Subject.DoesNotExist:
+                return {'error': 'Subject not found'}
+        
+        # Get class if provided
+        school_class = None
+        if class_id:
+            try:
+                school_class = Class.objects.get(id=class_id)
+            except Class.DoesNotExist:
+                return {'error': 'Class not found'}
+        
+        # Parse dates
+        from datetime import datetime
+        parsed_scheduled_date = None
+        parsed_due_date = None
+        parsed_scheduled_time = None
+        
+        if scheduled_date:
+            try:
+                parsed_scheduled_date = datetime.strptime(scheduled_date, '%Y-%m-%d').date()
+            except ValueError:
+                pass
+        
+        if due_date:
+            try:
+                parsed_due_date = datetime.strptime(due_date, '%Y-%m-%d').date()
+            except ValueError:
+                pass
+        
+        if scheduled_time:
+            try:
+                parsed_scheduled_time = datetime.strptime(scheduled_time, '%H:%M').time()
+            except ValueError:
+                pass
+        
+        created_activities = []
+        
+        if level == 'CLASS':
+            # Create one activity for the class
+            activity = Activity.objects.create(
+                title=title,
+                description=description,
+                level='CLASS',
+                subject=subject,
+                school_class=school_class,
+                school=self.teacher_profile.school,
+                google_meet_link=google_meet_link,
+                zoom_link=zoom_link,
+                other_link=other_link,
+                link_label=link_label,
+                scheduled_date=parsed_scheduled_date,
+                scheduled_time=parsed_scheduled_time,
+                due_date=parsed_due_date,
+                created_by=self.teacher_profile,
+            )
+            
+            # Create submissions for all students in the class
+            students = StudentProfile.objects.filter(
+                school=self.teacher_profile.school,
+                current_class=school_class
+            )
+            
+            for student in students:
+                ActivitySubmission.objects.create(
+                    activity=activity,
+                    student=student,
+                    status='PENDING'
+                )
+            
+            created_activities.append(activity)
+        
+        elif level == 'STUDENT':
+            # Create individual activities for selected students
+            if not student_ids:
+                return {'error': 'At least one student is required for student level activity'}
+            
+            for student_id in student_ids:
+                try:
+                    student = StudentProfile.objects.get(id=student_id, school=self.teacher_profile.school)
+                except StudentProfile.DoesNotExist:
+                    continue
+                
+                activity = Activity.objects.create(
+                    title=title,
+                    description=description,
+                    level='STUDENT',
+                    subject=subject,
+                    student=student,
+                    school=self.teacher_profile.school,
+                    google_meet_link=google_meet_link,
+                    zoom_link=zoom_link,
+                    other_link=other_link,
+                    link_label=link_label,
+                    scheduled_date=parsed_scheduled_date,
+                    scheduled_time=parsed_scheduled_time,
+                    due_date=parsed_due_date,
+                    created_by=self.teacher_profile,
+                )
+                
+                # Create submission for this student
+                ActivitySubmission.objects.create(
+                    activity=activity,
+                    student=student,
+                    status='PENDING'
+                )
+                
+                created_activities.append(activity)
+        
+        return {
+            'success': True,
+            'message': f'{len(created_activities)} activity(s) created successfully',
+            'activities': [
+                {
+                    'id': str(a.id),
+                    'title': a.title,
+                    'level': a.level,
+                }
+                for a in created_activities
+            ]
+        }
+    
+    def get_class_activities(self, class_id: str, page: int = 1, page_size: int = 10) -> Dict[str, Any]:
+        """Get activities for a specific class with pagination"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        activities = Activity.objects.filter(
+            school=self.teacher_profile.school,
+            school_class_id=class_id,
+            level='CLASS'
+        ).select_related('subject', 'school_class', 'created_by').order_by('-created_at')
+        
+        paginator = Paginator(activities, page_size)
+        page_obj = paginator.get_page(page)
+        
+        return {
+            'activities': [
+                {
+                    'id': str(activity.id),
+                    'title': activity.title,
+                    'description': activity.description[:100] + '...' if len(activity.description) > 100 else activity.description,
+                    'subject': {
+                        'id': str(activity.subject.id),
+                        'name': activity.subject.name,
+                    } if activity.subject else None,
+                    'status': activity.status,
+                    'scheduled_date': activity.scheduled_date.isoformat() if activity.scheduled_date else None,
+                    'scheduled_time': activity.scheduled_time.strftime('%H:%M') if activity.scheduled_time else None,
+                    'due_date': activity.due_date.isoformat() if activity.due_date else None,
+                    'google_meet_link': activity.google_meet_link,
+                    'zoom_link': activity.zoom_link,
+                    'other_link': activity.other_link,
+                    'link_label': activity.link_label,
+                    'submissions_count': activity.submissions_count,
+                    'completed_count': activity.completed_submissions_count,
+                    'created_at': activity.created_at.isoformat(),
+                }
+                for activity in page_obj
+            ],
+            'pagination': {
+                'current_page': page,
+                'total_pages': paginator.num_pages,
+                'total_count': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous(),
+            }
+        }
+    
+    def get_all_activities(self, page: int = 1, page_size: int = 10, status: str = None) -> Dict[str, Any]:
+        """Get all activities created by this teacher with pagination"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        activities = Activity.objects.filter(
+            created_by=self.teacher_profile
+        ).select_related('subject', 'school_class', 'student__user').order_by('-created_at')
+        
+        if status:
+            activities = activities.filter(status=status)
+        
+        paginator = Paginator(activities, page_size)
+        page_obj = paginator.get_page(page)
+        
+        return {
+            'activities': [
+                {
+                    'id': str(activity.id),
+                    'title': activity.title,
+                    'description': activity.description[:100] + '...' if len(activity.description) > 100 else activity.description,
+                    'level': activity.level,
+                    'subject': {
+                        'id': str(activity.subject.id),
+                        'name': activity.subject.name,
+                    } if activity.subject else None,
+                    'class': {
+                        'id': str(activity.school_class.id),
+                        'name': activity.school_class.full_name,
+                    } if activity.school_class else None,
+                    'student': {
+                        'id': str(activity.student.id),
+                        'name': activity.student.user.get_full_name(),
+                    } if activity.student else None,
+                    'status': activity.status,
+                    'scheduled_date': activity.scheduled_date.isoformat() if activity.scheduled_date else None,
+                    'scheduled_time': activity.scheduled_time.strftime('%H:%M') if activity.scheduled_time else None,
+                    'due_date': activity.due_date.isoformat() if activity.due_date else None,
+                    'google_meet_link': activity.google_meet_link,
+                    'zoom_link': activity.zoom_link,
+                    'other_link': activity.other_link,
+                    'link_label': activity.link_label,
+                    'submissions_count': activity.submissions_count,
+                    'completed_count': activity.completed_submissions_count,
+                    'created_at': activity.created_at.isoformat(),
+                }
+                for activity in page_obj
+            ],
+            'pagination': {
+                'current_page': page,
+                'total_pages': paginator.num_pages,
+                'total_count': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous(),
+            }
+        }
+    
+    def get_activity_detail(self, activity_id: str) -> Dict[str, Any]:
+        """Get detailed activity information"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        try:
+            activity = Activity.objects.select_related(
+                'subject', 'school_class', 'student__user', 'created_by__user'
+            ).get(id=activity_id, school=self.teacher_profile.school)
+        except Activity.DoesNotExist:
+            return {'error': 'Activity not found'}
+        
+        return {
+            'id': str(activity.id),
+            'title': activity.title,
+            'description': activity.description,
+            'level': activity.level,
+            'status': activity.status,
+            'subject': {
+                'id': str(activity.subject.id),
+                'name': activity.subject.name,
+                'code': activity.subject.code,
+            } if activity.subject else None,
+            'class': {
+                'id': str(activity.school_class.id),
+                'name': activity.school_class.full_name,
+            } if activity.school_class else None,
+            'student': {
+                'id': str(activity.student.id),
+                'name': activity.student.user.get_full_name(),
+            } if activity.student else None,
+            'google_meet_link': activity.google_meet_link,
+            'zoom_link': activity.zoom_link,
+            'other_link': activity.other_link,
+            'link_label': activity.link_label,
+            'scheduled_date': activity.scheduled_date.isoformat() if activity.scheduled_date else None,
+            'scheduled_time': activity.scheduled_time.strftime('%H:%M') if activity.scheduled_time else None,
+            'due_date': activity.due_date.isoformat() if activity.due_date else None,
+            'created_by': activity.created_by.user.get_full_name() if activity.created_by else None,
+            'submissions_count': activity.submissions_count,
+            'completed_count': activity.completed_submissions_count,
+            'created_at': activity.created_at.isoformat(),
+        }
+    
+    def get_activity_submissions(self, activity_id: str, page: int = 1, page_size: int = 20, status: str = None) -> Dict[str, Any]:
+        """Get submissions for an activity with pagination"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        try:
+            activity = Activity.objects.get(id=activity_id, school=self.teacher_profile.school)
+        except Activity.DoesNotExist:
+            return {'error': 'Activity not found'}
+        
+        submissions = ActivitySubmission.objects.filter(
+            activity=activity
+        ).select_related('student__user', 'graded_by__user').order_by('-submitted_at', 'student__roll_no')
+        
+        if status:
+            submissions = submissions.filter(status=status)
+        
+        paginator = Paginator(submissions, page_size)
+        page_obj = paginator.get_page(page)
+        
+        return {
+            'activity': {
+                'id': str(activity.id),
+                'title': activity.title,
+            },
+            'submissions': [
+                {
+                    'id': str(sub.id),
+                    'student': {
+                        'id': str(sub.student.id),
+                        'name': sub.student.user.get_full_name(),
+                        'roll_no': sub.student.roll_no,
+                    },
+                    'response': sub.response,
+                    'attachment_url': sub.attachment_url,
+                    'status': sub.status,
+                    'score': float(sub.score) if sub.score else None,
+                    'max_score': float(sub.max_score) if sub.max_score else None,
+                    'feedback': sub.feedback,
+                    'graded_by': sub.graded_by.user.get_full_name() if sub.graded_by else None,
+                    'graded_at': sub.graded_at.isoformat() if sub.graded_at else None,
+                    'submitted_at': sub.submitted_at.isoformat() if sub.submitted_at else None,
+                }
+                for sub in page_obj
+            ],
+            'pagination': {
+                'current_page': page,
+                'total_pages': paginator.num_pages,
+                'total_count': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous(),
+            },
+            'stats': {
+                'total': paginator.count,
+                'pending': submissions.filter(status='PENDING').count(),
+                'submitted': submissions.filter(status='SUBMITTED').count(),
+                'completed': submissions.filter(status='COMPLETED').count(),
+                'late': submissions.filter(status='LATE').count(),
+            }
+        }
+    
+    def update_activity_status(self, activity_id: str, status: str) -> Dict[str, Any]:
+        """Update activity status"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        if status not in ['DRAFT', 'ACTIVE', 'CLOSED']:
+            return {'error': 'Invalid status'}
+        
+        try:
+            activity = Activity.objects.get(id=activity_id, created_by=self.teacher_profile)
+        except Activity.DoesNotExist:
+            return {'error': 'Activity not found or access denied'}
+        
+        activity.status = status
+        activity.save()
+        
+        return {
+            'success': True,
+            'id': str(activity.id),
+            'status': activity.status,
+        }
+    
+    def update_activity(self, activity_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update activity details"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        try:
+            activity = Activity.objects.get(id=activity_id, created_by=self.teacher_profile)
+        except Activity.DoesNotExist:
+            return {'error': 'Activity not found or access denied'}
+        
+        # Update basic fields
+        if 'title' in data:
+            activity.title = data['title']
+        if 'description' in data:
+            activity.description = data['description']
+        if 'activity_type' in data:
+            activity.activity_type = data['activity_type']
+        if 'priority' in data:
+            activity.priority = data['priority']
+        
+        # Update dates
+        if 'scheduled_date' in data:
+            activity.scheduled_date = data['scheduled_date'] if data['scheduled_date'] else None
+        if 'scheduled_time' in data:
+            activity.scheduled_time = data['scheduled_time'] if data['scheduled_time'] else None
+        if 'due_date' in data:
+            activity.due_date = data['due_date'] if data['due_date'] else None
+        
+        # Update meeting links
+        if 'google_meet_link' in data:
+            activity.google_meet_link = data['google_meet_link'] if data['google_meet_link'] else None
+        if 'zoom_link' in data:
+            activity.zoom_link = data['zoom_link'] if data['zoom_link'] else None
+        if 'other_link' in data:
+            activity.other_link = data['other_link'] if data['other_link'] else None
+        if 'link_label' in data:
+            activity.link_label = data['link_label'] if data['link_label'] else None
+        
+        # Update subject if provided
+        if 'subject_id' in data and data['subject_id']:
+            from superadmin.models import Subject
+            try:
+                activity.subject = Subject.objects.get(id=data['subject_id'])
+            except Subject.DoesNotExist:
+                pass
+        
+        activity.save()
+        
+        return {
+            'success': True,
+            'id': str(activity.id),
+            'title': activity.title,
+            'description': activity.description,
+            'status': activity.status,
+        }
+    
+    def grade_submission(self, submission_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Grade a student's submission"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        try:
+            submission = ActivitySubmission.objects.select_related('activity').get(
+                id=submission_id,
+                activity__school=self.teacher_profile.school
+            )
+        except ActivitySubmission.DoesNotExist:
+            return {'error': 'Submission not found'}
+        
+        score = data.get('score')
+        max_score = data.get('max_score')
+        feedback = data.get('feedback')
+        new_status = data.get('status', 'COMPLETED')
+        
+        if score is not None:
+            submission.score = score
+        if max_score is not None:
+            submission.max_score = max_score
+        if feedback:
+            submission.feedback = feedback
+        
+        submission.status = new_status
+        submission.graded_by = self.teacher_profile
+        submission.graded_at = timezone.now()
+        submission.save()
+        
+        return {
+            'success': True,
+            'id': str(submission.id),
+            'status': submission.status,
+            'score': float(submission.score) if submission.score else None,
+        }
+
+
+class TeacherAnnouncementService:
+    """Service for teacher announcement operations"""
+    
+    def __init__(self, user):
+        self.user = user
+        self.teacher_profile = None
+        try:
+            from teachers.models import TeacherProfile
+            self.teacher_profile = TeacherProfile.objects.select_related('school').get(user=user)
+        except TeacherProfile.DoesNotExist:
+            pass
+    
+    def get_announcements(self, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+        """Get announcements targeted to this teacher (school-level or user-level)"""
+        if not self.teacher_profile:
+            return {'announcements': [], 'pagination': None}
+        
+        from superadmin.models import Announcement, AnnouncementTarget
+        from django.db.models import Q
+        
+        # Get announcements where:
+        # 1. School-level targets for this school (filter target_roles in Python for SQLite compatibility)
+        # 2. User-level targeting this teacher
+        
+        # First get user-level targets
+        user_target_ids = AnnouncementTarget.objects.filter(
+            user=self.user
+        ).values_list('announcement_id', flat=True)
+        
+        # Get school-level targets and filter in Python
+        school_targets = AnnouncementTarget.objects.filter(
+            school=self.teacher_profile.school
+        )
+        school_target_ids = [
+            t.announcement_id for t in school_targets
+            if not t.target_roles or 'TEACHER' in t.target_roles
+        ]
+        
+        # Combine announcement IDs
+        all_announcement_ids = list(set(list(user_target_ids) + school_target_ids))
+        
+        announcements = Announcement.objects.filter(
+            id__in=all_announcement_ids,
+            status='PUBLISHED',
+            is_active=True
+        ).order_by('-published_at', '-created_at')
+        
+        paginator = Paginator(announcements, page_size)
+        page_obj = paginator.get_page(page)
+        
+        announcements_data = []
+        for ann in page_obj:
+            # Get target info
+            targets = AnnouncementTarget.objects.filter(announcement=ann).select_related('school', 'school_class', 'user')
+            target_info = []
+            for t in targets:
+                if t.school:
+                    target_info.append({'type': 'SCHOOL', 'name': t.school.name})
+                elif t.school_class:
+                    target_info.append({'type': 'CLASS', 'name': t.school_class.full_name})
+                elif t.user:
+                    target_info.append({'type': 'USER', 'name': t.user.get_full_name()})
+            
+            announcements_data.append({
+                'id': str(ann.id),
+                'title': ann.title,
+                'content': ann.content,
+                'priority': ann.priority,
+                'status': ann.status,
+                'published_at': ann.published_at.isoformat() if ann.published_at else None,
+                'expires_at': ann.expires_at.isoformat() if ann.expires_at else None,
+                'created_by': ann.created_by.get_full_name() if ann.created_by else None,
+                'created_at': ann.created_at.isoformat(),
+                'targets': target_info,
+            })
+        
+        return {
+            'announcements': announcements_data,
+            'pagination': {
+                'page': page,
+                'page_size': page_size,
+                'total_count': paginator.count,
+                'total_pages': paginator.num_pages,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous(),
+            }
+        }
+    
+    def get_my_announcements(self, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+        """Get announcements created by this teacher"""
+        if not self.teacher_profile:
+            return {'announcements': [], 'pagination': None}
+        
+        from superadmin.models import Announcement, AnnouncementTarget
+        
+        announcements = Announcement.objects.filter(
+            created_by=self.user
+        ).order_by('-created_at')
+        
+        paginator = Paginator(announcements, page_size)
+        page_obj = paginator.get_page(page)
+        
+        announcements_data = []
+        for ann in page_obj:
+            targets = AnnouncementTarget.objects.filter(announcement=ann).select_related('school', 'school_class', 'user')
+            target_info = []
+            for t in targets:
+                if t.school:
+                    target_info.append({'type': 'SCHOOL', 'name': t.school.name})
+                elif t.school_class:
+                    target_info.append({'type': 'CLASS', 'name': t.school_class.full_name})
+                elif t.user:
+                    target_info.append({'type': 'USER', 'name': t.user.get_full_name()})
+            
+            announcements_data.append({
+                'id': str(ann.id),
+                'title': ann.title,
+                'content': ann.content,
+                'priority': ann.priority,
+                'status': ann.status,
+                'published_at': ann.published_at.isoformat() if ann.published_at else None,
+                'expires_at': ann.expires_at.isoformat() if ann.expires_at else None,
+                'created_at': ann.created_at.isoformat(),
+                'targets': target_info,
+            })
+        
+        return {
+            'announcements': announcements_data,
+            'pagination': {
+                'page': page,
+                'page_size': page_size,
+                'total_count': paginator.count,
+                'total_pages': paginator.num_pages,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous(),
+            }
+        }
+    
+    def create_announcement(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create an announcement at class or student level"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        from superadmin.models import Announcement, AnnouncementTarget, SchoolClass
+        from students.models import StudentProfile
+        
+        title = data.get('title', '').strip()
+        content = data.get('content', '').strip()
+        level = data.get('level', 'CLASS')  # CLASS or STUDENT
+        priority = data.get('priority', 'MEDIUM')
+        
+        if not title:
+            return {'error': 'Title is required'}
+        
+        try:
+            with transaction.atomic():
+                # Create announcement
+                announcement = Announcement.objects.create(
+                    title=title,
+                    content=content,
+                    priority=priority,
+                    status='PUBLISHED',
+                    published_at=timezone.now(),
+                    created_by=self.user,
+                )
+                
+                if level == 'CLASS':
+                    class_id = data.get('class_id')
+                    if not class_id:
+                        return {'error': 'class_id is required for class-level announcements'}
+                    
+                    try:
+                        school_class = SchoolClass.objects.get(
+                            id=class_id,
+                            school=self.teacher_profile.school
+                        )
+                    except SchoolClass.DoesNotExist:
+                        return {'error': 'Class not found'}
+                    
+                    # Create class-level target
+                    AnnouncementTarget.objects.create(
+                        announcement=announcement,
+                        school_class=school_class,
+                    )
+                    
+                elif level == 'STUDENT':
+                    student_id = data.get('student_id')
+                    if not student_id:
+                        return {'error': 'student_id is required for student-level announcements'}
+                    
+                    try:
+                        student = StudentProfile.objects.select_related('user').get(
+                            id=student_id,
+                            school=self.teacher_profile.school
+                        )
+                    except StudentProfile.DoesNotExist:
+                        return {'error': 'Student not found'}
+                    
+                    # Create user-level target
+                    AnnouncementTarget.objects.create(
+                        announcement=announcement,
+                        user=student.user,
+                    )
+                
+                else:
+                    return {'error': 'Invalid level. Use CLASS or STUDENT'}
+                
+                return {
+                    'success': True,
+                    'announcement': {
+                        'id': str(announcement.id),
+                        'title': announcement.title,
+                        'level': level,
+                        'status': announcement.status,
+                    }
+                }
+        
+        except Exception as e:
+            return {'error': f'Failed to create announcement: {str(e)}'}
+    
+    def get_classes_for_announcements(self) -> List[Dict[str, Any]]:
+        """Get classes assigned to this teacher for creating announcements"""
+        if not self.teacher_profile:
+            return []
+        
+        from superadmin.models import SchoolClass
+        from teachers.models import TeacherClassAssignment
+        
+        # Get unique class IDs from assignments and attendance_class
+        # Note: TeacherClassAssignment.school_class is actually a ForeignKey to Class (template), not SchoolClass
+        assigned_class_ids = set()
+        if self.teacher_profile.attendance_class:
+            assigned_class_ids.add(self.teacher_profile.attendance_class.id)
+        
+        assignments = TeacherClassAssignment.objects.filter(
+            teacher=self.teacher_profile,
+            is_active=True
+        ).select_related('school_class')  # school_class IS the Class object
+        
+        for assignment in assignments:
+            # school_class is the Class template object, not SchoolClass
+            assigned_class_ids.add(assignment.school_class.id)
+        
+        # Get SchoolClass instances for these Class templates
+        school_classes = SchoolClass.objects.filter(
+            school=self.teacher_profile.school,
+            class_obj__id__in=list(assigned_class_ids),
+            is_active=True
+        ).select_related('class_obj').order_by('class_obj__grade_number', 'section')
+        
+        return [
+            {
+                'id': str(sc.id),
+                'class_id': str(sc.class_obj.id),
+                'name': sc.class_obj.name,
+                'section': sc.section,
+                'full_name': sc.full_name,
+            }
+            for sc in school_classes
+        ]
+    
+    def get_students_for_announcement(self, class_id: str) -> List[Dict[str, Any]]:
+        """Get students in a class for student-level announcements"""
+        if not self.teacher_profile:
+            return []
+        
+        from superadmin.models import SchoolClass
+        from students.models import StudentProfile
+        
+        try:
+            school_class = SchoolClass.objects.get(
+                id=class_id,
+                school=self.teacher_profile.school
+            )
+        except SchoolClass.DoesNotExist:
+            return []
+        
+        students = StudentProfile.objects.filter(
+            school=self.teacher_profile.school,
+            current_class=school_class.class_obj
+        ).select_related('user').order_by('roll_no', 'user__first_name')
+        
+        return [
+            {
+                'id': str(s.id),
+                'name': s.user.get_full_name(),
+                'roll_no': s.roll_no,
+            }
+            for s in students
+        ]
+
+
+class TeacherReportService:
+    """
+    Service for managing student reports/progress cards
+    """
+    
+    def __init__(self, user):
+        self.user = user
+        self.teacher_profile = None
+        
+        try:
+            self.teacher_profile = TeacherProfile.objects.select_related('school').get(user=user)
+        except TeacherProfile.DoesNotExist:
+            pass
+    
+    def get_classes_for_reports(self) -> List[Dict[str, Any]]:
+        """Get classes assigned to teacher for creating reports"""
+        if not self.teacher_profile:
+            return []
+        
+        from superadmin.models import SchoolClass
+        
+        # Get assigned class IDs
+        assigned_class_ids = set()
+        if self.teacher_profile.attendance_class:
+            assigned_class_ids.add(self.teacher_profile.attendance_class.id)
+        
+        assignments = TeacherClassAssignment.objects.filter(
+            teacher=self.teacher_profile,
+            is_active=True
+        ).select_related('school_class')
+        
+        for assignment in assignments:
+            assigned_class_ids.add(assignment.school_class.id)
+        
+        # Get SchoolClass instances
+        school_classes = SchoolClass.objects.filter(
+            school=self.teacher_profile.school,
+            class_obj__id__in=list(assigned_class_ids),
+            is_active=True
+        ).select_related('class_obj').order_by('class_obj__grade_number', 'section')
+        
+        return [
+            {
+                'id': str(sc.class_obj.id),
+                'school_class_id': str(sc.id),
+                'name': sc.class_obj.name,
+                'section': sc.section,
+                'full_name': sc.full_name,
+            }
+            for sc in school_classes
+        ]
+    
+    def get_subjects_for_class(self, class_id: str) -> List[Dict[str, Any]]:
+        """Get subjects for a class"""
+        if not self.teacher_profile:
+            return []
+        
+        from superadmin.models import Subject
+        
+        # Get subjects assigned to this teacher for this class
+        subjects = Subject.objects.filter(is_active=True).order_by('name')
+        
+        return [
+            {
+                'id': str(s.id),
+                'name': s.name,
+                'code': s.code if hasattr(s, 'code') else s.name[:3].upper(),
+            }
+            for s in subjects
+        ]
+    
+    def get_students_for_report(self, class_id: str) -> List[Dict[str, Any]]:
+        """Get students in a class for report entry"""
+        if not self.teacher_profile:
+            return []
+        
+        from students.models import StudentProfile
+        from superadmin.models import Class
+        
+        try:
+            class_obj = Class.objects.get(id=class_id)
+        except Class.DoesNotExist:
+            return []
+        
+        students = StudentProfile.objects.filter(
+            school=self.teacher_profile.school,
+            current_class=class_obj
+        ).select_related('user').order_by('roll_no', 'user__first_name')
+        
+        return [
+            {
+                'id': str(s.id),
+                'name': s.user.get_full_name(),
+                'roll_no': s.roll_no or '',
+                'email': s.user.email,
+            }
+            for s in students
+        ]
+    
+    def get_reports(self, class_id: str = None) -> List[Dict[str, Any]]:
+        """Get all reports for a class or all classes assigned to teacher"""
+        if not self.teacher_profile:
+            return []
+        
+        from teachers.models import Report
+        
+        # Get assigned class IDs
+        assigned_class_ids = set()
+        if self.teacher_profile.attendance_class:
+            assigned_class_ids.add(self.teacher_profile.attendance_class.id)
+        
+        assignments = TeacherClassAssignment.objects.filter(
+            teacher=self.teacher_profile,
+            is_active=True
+        )
+        for assignment in assignments:
+            assigned_class_ids.add(assignment.school_class.id)
+        
+        # Filter reports
+        reports_qs = Report.objects.filter(
+            school=self.teacher_profile.school,
+            class_ref__id__in=list(assigned_class_ids)
+        ).select_related('class_ref', 'created_by', 'created_by__user')
+        
+        if class_id:
+            reports_qs = reports_qs.filter(class_ref_id=class_id)
+        
+        reports_qs = reports_qs.order_by('-created_at')
+        
+        return [
+            {
+                'id': str(r.id),
+                'name': r.name,
+                'report_type': r.report_type,
+                'status': r.status,
+                'class_name': r.class_ref.name,
+                'class_id': str(r.class_ref.id),
+                'academic_year': r.academic_year,
+                'exam_date': r.exam_date.isoformat() if r.exam_date else None,
+                'subjects': r.subjects,
+                'created_by': r.created_by.user.get_full_name() if r.created_by else 'Unknown',
+                'created_at': r.created_at.isoformat(),
+                'published_at': r.published_at.isoformat() if r.published_at else None,
+                'student_count': r.student_marks.count(),
+            }
+            for r in reports_qs
+        ]
+    
+    def get_report_detail(self, report_id: str) -> Dict[str, Any]:
+        """Get detailed report with all student marks"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        from teachers.models import Report, StudentMark
+        
+        try:
+            report = Report.objects.select_related('class_ref', 'created_by', 'created_by__user').get(
+                id=report_id,
+                school=self.teacher_profile.school
+            )
+        except Report.DoesNotExist:
+            return {'error': 'Report not found'}
+        
+        # Get all student marks
+        student_marks = StudentMark.objects.filter(
+            report=report
+        ).select_related('student', 'student__user').order_by('-percentage', 'student__roll_no')
+        
+        return {
+            'id': str(report.id),
+            'name': report.name,
+            'report_type': report.report_type,
+            'description': report.description,
+            'status': report.status,
+            'class_name': report.class_ref.name,
+            'class_id': str(report.class_ref.id),
+            'academic_year': report.academic_year,
+            'exam_date': report.exam_date.isoformat() if report.exam_date else None,
+            'subjects': report.subjects,
+            'created_by': report.created_by.user.get_full_name() if report.created_by else 'Unknown',
+            'created_at': report.created_at.isoformat(),
+            'published_at': report.published_at.isoformat() if report.published_at else None,
+            'students': [
+                {
+                    'id': str(sm.student.id),
+                    'student_mark_id': str(sm.id),
+                    'name': sm.student.user.get_full_name(),
+                    'roll_no': sm.student.roll_no or '',
+                    'marks': sm.marks,
+                    'total_marks': float(sm.total_marks),
+                    'total_max_marks': float(sm.total_max_marks),
+                    'percentage': float(sm.percentage),
+                    'grade': sm.grade,
+                    'rank': sm.rank,
+                    'remarks': sm.remarks,
+                }
+                for sm in student_marks
+            ]
+        }
+    
+    def create_report(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new report"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        from teachers.models import Report
+        from superadmin.models import Class
+        
+        name = data.get('name', '').strip()
+        class_id = data.get('class_id')
+        subjects = data.get('subjects', [])
+        
+        if not name:
+            return {'error': 'Report name is required'}
+        if not class_id:
+            return {'error': 'Class is required'}
+        if not subjects:
+            return {'error': 'At least one subject is required'}
+        
+        try:
+            class_obj = Class.objects.get(id=class_id)
+        except Class.DoesNotExist:
+            return {'error': 'Class not found'}
+        
+        try:
+            with transaction.atomic():
+                report = Report.objects.create(
+                    name=name,
+                    report_type=data.get('report_type', 'EXAM'),
+                    description=data.get('description', ''),
+                    school=self.teacher_profile.school,
+                    class_ref=class_obj,
+                    academic_year=data.get('academic_year', '2024-2025'),
+                    exam_date=data.get('exam_date'),
+                    subjects=subjects,
+                    created_by=self.teacher_profile,
+                )
+                
+                return {
+                    'success': True,
+                    'report': {
+                        'id': str(report.id),
+                        'name': report.name,
+                        'class_name': class_obj.name,
+                    }
+                }
+        except Exception as e:
+            print(f"Error creating report: {e}")
+            return {'error': str(e)}
+    
+    def save_student_marks(self, report_id: str, marks_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Save marks for multiple students"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        from teachers.models import Report, StudentMark
+        from students.models import StudentProfile
+        
+        try:
+            report = Report.objects.get(id=report_id, school=self.teacher_profile.school)
+        except Report.DoesNotExist:
+            return {'error': 'Report not found'}
+        
+        try:
+            with transaction.atomic():
+                saved_count = 0
+                for entry in marks_data:
+                    student_id = entry.get('student_id')
+                    marks = entry.get('marks', {})
+                    remarks = entry.get('remarks', '')
+                    
+                    if not student_id:
+                        continue
+                    
+                    try:
+                        student = StudentProfile.objects.get(id=student_id)
+                    except StudentProfile.DoesNotExist:
+                        continue
+                    
+                    # Create or update StudentMark
+                    student_mark, created = StudentMark.objects.update_or_create(
+                        report=report,
+                        student=student,
+                        defaults={
+                            'marks': marks,
+                            'remarks': remarks,
+                        }
+                    )
+                    saved_count += 1
+                
+                # Calculate ranks after saving all marks
+                self._calculate_ranks(report)
+                
+                return {
+                    'success': True,
+                    'saved_count': saved_count,
+                }
+        except Exception as e:
+            print(f"Error saving marks: {e}")
+            return {'error': str(e)}
+    
+    def _calculate_ranks(self, report):
+        """Calculate and update ranks for all students in a report"""
+        from teachers.models import StudentMark
+        
+        student_marks = StudentMark.objects.filter(report=report).order_by('-percentage')
+        
+        current_rank = 0
+        current_percentage = None
+        
+        for i, sm in enumerate(student_marks):
+            if sm.percentage != current_percentage:
+                current_rank = i + 1
+                current_percentage = sm.percentage
+            sm.rank = current_rank
+            StudentMark.objects.filter(id=sm.id).update(rank=current_rank)
+    
+    def publish_report(self, report_id: str) -> Dict[str, Any]:
+        """Publish a report to make it visible to students"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        from teachers.models import Report
+        
+        try:
+            report = Report.objects.get(id=report_id, school=self.teacher_profile.school)
+            report.status = 'PUBLISHED'
+            report.published_at = timezone.now()
+            report.save()
+            
+            return {'success': True, 'status': 'PUBLISHED'}
+        except Report.DoesNotExist:
+            return {'error': 'Report not found'}
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def delete_report(self, report_id: str) -> Dict[str, Any]:
+        """Delete a report"""
+        if not self.teacher_profile:
+            return {'error': 'Teacher profile not found'}
+        
+        from teachers.models import Report
+        
+        try:
+            report = Report.objects.get(id=report_id, school=self.teacher_profile.school)
+            report.delete()
+            return {'success': True}
+        except Report.DoesNotExist:
+            return {'error': 'Report not found'}
+        except Exception as e:
+            return {'error': str(e)}
 

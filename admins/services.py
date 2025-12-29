@@ -1577,7 +1577,8 @@ class ReportService:
                 'permissions': {
                     'can_mark_attendance': teacher.can_mark_attendance,
                     'can_assign_homework': teacher.can_assign_homework,
-                    'can_grade_assignments': teacher.can_grade_assignments
+                    'can_grade_assignments': teacher.can_grade_assignments,
+                    'can_update_pii': teacher.can_update_pii
                 },
                 'attendance_summary': {
                     'total_records_marked': total_marked,
@@ -2224,12 +2225,27 @@ class TeacherTaskService:
         }
         
         if include_replies:
+            def get_reply_user_info(user):
+                if not user:
+                    return {'id': None, 'name': 'Unknown', 'role': 'Unknown'}
+                role = 'Unknown'
+                try:
+                    if hasattr(user, 'user_role') and user.user_role:
+                        role = user.user_role.role_type
+                except:
+                    pass
+                return {
+                    'id': str(user.id),
+                    'name': user.get_full_name(),
+                    'role': role
+                }
+            
             data['replies'] = [
                 {
                     'id': str(reply.id),
                     'content': reply.content,
                     'reply_type': reply.reply_type,
-                    'replied_by': reply.replied_by.get_full_name() if reply.replied_by else 'Unknown',
+                    'replied_by': get_reply_user_info(reply.replied_by),
                     'created_at': reply.created_at.isoformat()
                 }
                 for reply in task.replies.all().order_by('created_at')
@@ -2409,6 +2425,8 @@ class TeacherTaskService:
                     teacher.can_assign_homework = data['can_assign_homework']
                 if 'can_grade_assignments' in data:
                     teacher.can_grade_assignments = data['can_grade_assignments']
+                if 'can_update_pii' in data:
+                    teacher.can_update_pii = data['can_update_pii']
                 
                 # Update school if provided and admin has access to new school
                 if 'school_id' in data:
@@ -2450,7 +2468,13 @@ class TeacherTaskService:
                 return {
                     'id': str(teacher.id),
                     'name': teacher.user.get_full_name(),
-                    'updated': True
+                    'updated': True,
+                    'permissions': {
+                        'can_mark_attendance': teacher.can_mark_attendance,
+                        'can_assign_homework': teacher.can_assign_homework,
+                        'can_grade_assignments': teacher.can_grade_assignments,
+                        'can_update_pii': teacher.can_update_pii,
+                    }
                 }
                 
         except TeacherProfile.DoesNotExist:

@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 from rest_framework.decorators import action
 
-from .services import TeacherDashboardService, TeacherAttendanceService, TeacherStudentService
+from .services import TeacherDashboardService, TeacherAttendanceService, TeacherStudentService, TeacherActivityService
 from users.permissions import IsTeacher
 
 
@@ -92,6 +92,26 @@ class TeacherDashboardViewSet(ViewSet):
         return Response({
             'success': True,
             'data': data
+        })
+    
+    @action(detail=False, methods=['put', 'patch'], url_path='update-profile')
+    def update_profile(self, request):
+        """
+        Update teacher's own profile (phone, email, address)
+        """
+        service = TeacherDashboardService(request.user)
+        result = service.update_own_profile(request.data)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result,
+            'message': 'Profile updated successfully'
         })
     
     @action(detail=False, methods=['get'])
@@ -544,6 +564,54 @@ class TeacherStudentViewSet(ViewSet):
             'data': data
         })
     
+    @action(detail=False, methods=['post'], url_path='add')
+    def add_student(self, request):
+        """
+        Add a new student to a class
+        Requires teacher to have can_update_pii permission
+        Body: { class_id, first_name, last_name, phone?, email?, date_of_birth?, roll_no?, parent_name?, parent_phone? }
+        """
+        class_id = request.data.get('class_id')
+        if not class_id:
+            return Response({
+                'success': False,
+                'error': 'class_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        service = TeacherStudentService(request.user)
+        result = service.add_student(class_id, request.data)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        }, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, methods=['put', 'patch'], url_path='update')
+    def update_student(self, request, pk=None):
+        """
+        Update student details
+        Requires teacher to have can_update_pii permission
+        """
+        service = TeacherStudentService(request.user)
+        result = service.update_student_details(pk, request.data)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
     @action(detail=True, methods=['get'], url_path='tasks')
     def student_tasks(self, request, pk=None):
         """
@@ -593,6 +661,563 @@ class TeacherStudentViewSet(ViewSet):
         
         service = TeacherStudentService(request.user)
         result = service.update_student_task_status(task_id, status_value)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
+    @action(detail=False, methods=['get'], url_path='task/(?P<task_id>[^/.]+)/detail')
+    def task_detail(self, request, task_id=None):
+        """
+        Get a student task with replies
+        """
+        service = TeacherStudentService(request.user)
+        result = service.get_student_task_detail(task_id)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result['task']
+        })
+    
+    @action(detail=False, methods=['post'], url_path='task/(?P<task_id>[^/.]+)/reply')
+    def add_task_reply(self, request, task_id=None):
+        """
+        Add a reply to a student task
+        """
+        content = request.data.get('content')
+        if not content:
+            return Response({
+                'success': False,
+                'error': 'Content is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        service = TeacherStudentService(request.user)
+        result = service.add_student_task_reply(task_id, content)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result['reply']
+        })
+
+
+class TeacherActivityViewSet(ViewSet):
+    """ViewSet for teacher activity/schedule operations"""
+    
+    permission_classes = [IsAuthenticated, IsTeacher]
+    
+    @action(detail=False, methods=['get'])
+    def classes(self, request):
+        """
+        Get classes assigned to this teacher for creating activities
+        """
+        service = TeacherActivityService(request.user)
+        classes = service.get_classes_for_activities()
+        
+        return Response({
+            'success': True,
+            'data': {
+                'classes': classes,
+                'count': len(classes)
+            }
+        })
+    
+    @action(detail=False, methods=['get'], url_path='classes/(?P<class_id>[^/.]+)/students')
+    def class_students(self, request, class_id=None):
+        """
+        Get students in a specific class
+        """
+        service = TeacherActivityService(request.user)
+        students = service.get_class_students(class_id)
+        
+        return Response({
+            'success': True,
+            'data': {
+                'students': students,
+                'count': len(students)
+            }
+        })
+    
+    @action(detail=False, methods=['get'])
+    def subjects(self, request):
+        """
+        Get subjects taught by this teacher
+        """
+        service = TeacherActivityService(request.user)
+        subjects = service.get_subjects()
+        
+        return Response({
+            'success': True,
+            'data': {
+                'subjects': subjects,
+                'count': len(subjects)
+            }
+        })
+    
+    @action(detail=False, methods=['post'])
+    def create(self, request):
+        """
+        Create a new activity
+        """
+        service = TeacherActivityService(request.user)
+        result = service.create_activity(request.data)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        }, status=status.HTTP_201_CREATED)
+    
+    @action(detail=False, methods=['get'], url_path='classes/(?P<class_id>[^/.]+)/activities')
+    def class_activities(self, request, class_id=None):
+        """
+        Get activities for a specific class with pagination
+        Query params: page (default 1), page_size (default 10)
+        """
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 10))
+        
+        service = TeacherActivityService(request.user)
+        result = service.get_class_activities(class_id, page, page_size)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
+    @action(detail=False, methods=['get'])
+    def list_all(self, request):
+        """
+        Get all activities created by this teacher with pagination
+        Query params: page (default 1), page_size (default 10), status
+        """
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 10))
+        activity_status = request.query_params.get('status')
+        
+        service = TeacherActivityService(request.user)
+        result = service.get_all_activities(page, page_size, activity_status)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
+    def retrieve(self, request, pk=None):
+        """
+        Get activity detail
+        """
+        service = TeacherActivityService(request.user)
+        result = service.get_activity_detail(pk)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
+    @action(detail=True, methods=['get'])
+    def submissions(self, request, pk=None):
+        """
+        Get submissions for an activity with pagination
+        Query params: page (default 1), page_size (default 20), status
+        """
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 20))
+        submission_status = request.query_params.get('status')
+        
+        service = TeacherActivityService(request.user)
+        result = service.get_activity_submissions(pk, page, page_size, submission_status)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
+    @action(detail=True, methods=['patch'], url_path='status')
+    def update_status(self, request, pk=None):
+        """
+        Update activity status
+        """
+        activity_status = request.data.get('status')
+        
+        if not activity_status:
+            return Response({
+                'success': False,
+                'error': 'Status is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        service = TeacherActivityService(request.user)
+        result = service.update_activity_status(pk, activity_status)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
+    @action(detail=True, methods=['put', 'patch'], url_path='update')
+    def update_activity(self, request, pk=None):
+        """
+        Update activity details
+        Body: { title?, description?, activity_type?, priority?, scheduled_date?, scheduled_time?, due_date?, 
+                google_meet_link?, zoom_link?, other_link?, link_label?, subject_id? }
+        """
+        service = TeacherActivityService(request.user)
+        result = service.update_activity(pk, request.data)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
+    @action(detail=False, methods=['patch'], url_path='submissions/(?P<submission_id>[^/.]+)/grade')
+    def grade_submission(self, request, submission_id=None):
+        """
+        Grade a student's submission
+        """
+        service = TeacherActivityService(request.user)
+        result = service.grade_submission(submission_id, request.data)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+
+
+class TeacherAnnouncementViewSet(ViewSet):
+    """ViewSet for teacher announcement operations"""
+    
+    permission_classes = [IsAuthenticated, IsTeacher]
+    
+    def list(self, request):
+        """
+        Get announcements targeted to this teacher
+        """
+        from .services import TeacherAnnouncementService
+        
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 20))
+        
+        service = TeacherAnnouncementService(request.user)
+        result = service.get_announcements(page, page_size)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
+    @action(detail=False, methods=['get'], url_path='my')
+    def my_announcements(self, request):
+        """
+        Get announcements created by this teacher
+        """
+        from .services import TeacherAnnouncementService
+        
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 20))
+        
+        service = TeacherAnnouncementService(request.user)
+        result = service.get_my_announcements(page, page_size)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
+    def create(self, request):
+        """
+        Create an announcement
+        Body: { title, content, level: 'CLASS' | 'STUDENT', priority?, class_id?, student_id? }
+        """
+        from .services import TeacherAnnouncementService
+        
+        service = TeacherAnnouncementService(request.user)
+        result = service.create_announcement(request.data)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        }, status=status.HTTP_201_CREATED)
+    
+    @action(detail=False, methods=['get'], url_path='classes')
+    def classes(self, request):
+        """
+        Get classes for creating announcements
+        """
+        from .services import TeacherAnnouncementService
+        
+        service = TeacherAnnouncementService(request.user)
+        classes = service.get_classes_for_announcements()
+        
+        return Response({
+            'success': True,
+            'data': {
+                'classes': classes,
+                'count': len(classes)
+            }
+        })
+    
+    @action(detail=False, methods=['get'], url_path='classes/(?P<class_id>[^/.]+)/students')
+    def class_students(self, request, class_id=None):
+        """
+        Get students in a class for student-level announcements
+        """
+        from .services import TeacherAnnouncementService
+        
+        service = TeacherAnnouncementService(request.user)
+        students = service.get_students_for_announcement(class_id)
+        
+        return Response({
+            'success': True,
+            'data': {
+                'students': students,
+                'count': len(students)
+            }
+        })
+
+
+class TeacherReportViewSet(ViewSet):
+    """ViewSet for teacher report/progress card operations"""
+    
+    permission_classes = [IsAuthenticated, IsTeacher]
+    
+    def list(self, request):
+        """
+        Get all reports for teacher's classes
+        Query params: class_id (optional)
+        """
+        from .services import TeacherReportService
+        
+        service = TeacherReportService(request.user)
+        class_id = request.query_params.get('class_id')
+        reports = service.get_reports(class_id)
+        
+        return Response({
+            'success': True,
+            'data': {
+                'reports': reports,
+                'count': len(reports)
+            }
+        })
+    
+    def retrieve(self, request, pk=None):
+        """
+        Get report detail with all student marks
+        """
+        from .services import TeacherReportService
+        
+        service = TeacherReportService(request.user)
+        result = service.get_report_detail(pk)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
+    def create(self, request):
+        """
+        Create a new report
+        Body: { name, class_id, report_type?, subjects: [{id, name, max_marks}], description?, exam_date?, academic_year? }
+        """
+        from .services import TeacherReportService
+        
+        service = TeacherReportService(request.user)
+        result = service.create_report(request.data)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        }, status=status.HTTP_201_CREATED)
+    
+    def destroy(self, request, pk=None):
+        """
+        Delete a report
+        """
+        from .services import TeacherReportService
+        
+        service = TeacherReportService(request.user)
+        result = service.delete_report(pk)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'message': 'Report deleted'
+        })
+    
+    @action(detail=False, methods=['get'], url_path='classes')
+    def classes(self, request):
+        """
+        Get classes for creating reports
+        """
+        from .services import TeacherReportService
+        
+        service = TeacherReportService(request.user)
+        classes = service.get_classes_for_reports()
+        
+        return Response({
+            'success': True,
+            'data': {
+                'classes': classes,
+                'count': len(classes)
+            }
+        })
+    
+    @action(detail=False, methods=['get'], url_path='classes/(?P<class_id>[^/.]+)/subjects')
+    def class_subjects(self, request, class_id=None):
+        """
+        Get subjects for a class
+        """
+        from .services import TeacherReportService
+        
+        service = TeacherReportService(request.user)
+        subjects = service.get_subjects_for_class(class_id)
+        
+        return Response({
+            'success': True,
+            'data': {
+                'subjects': subjects,
+                'count': len(subjects)
+            }
+        })
+    
+    @action(detail=False, methods=['get'], url_path='classes/(?P<class_id>[^/.]+)/students')
+    def class_students(self, request, class_id=None):
+        """
+        Get students in a class for report
+        """
+        from .services import TeacherReportService
+        
+        service = TeacherReportService(request.user)
+        students = service.get_students_for_report(class_id)
+        
+        return Response({
+            'success': True,
+            'data': {
+                'students': students,
+                'count': len(students)
+            }
+        })
+    
+    @action(detail=True, methods=['post'], url_path='marks')
+    def save_marks(self, request, pk=None):
+        """
+        Save student marks for a report
+        Body: { marks: [{ student_id, marks: {subject_id: {marks, max_marks}}, remarks? }] }
+        """
+        from .services import TeacherReportService
+        
+        service = TeacherReportService(request.user)
+        marks_data = request.data.get('marks', [])
+        
+        result = service.save_student_marks(pk, marks_data)
+        
+        if 'error' in result:
+            return Response({
+                'success': False,
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'success': True,
+            'data': result
+        })
+    
+    @action(detail=True, methods=['post'], url_path='publish')
+    def publish(self, request, pk=None):
+        """
+        Publish a report (make visible to students)
+        """
+        from .services import TeacherReportService
+        
+        service = TeacherReportService(request.user)
+        result = service.publish_report(pk)
         
         if 'error' in result:
             return Response({

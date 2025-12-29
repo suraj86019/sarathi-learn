@@ -131,19 +131,11 @@ class LoginSerializer(serializers.Serializer):
         except:
             raise serializers.ValidationError('User role not assigned')
         
-        # Authentication based on role
-        if role == 'STUDENT':
-            # Students login with date of birth
-            if not date_of_birth:
-                raise serializers.ValidationError('Date of birth is required for students')
-            if user.date_of_birth != date_of_birth:
-                raise serializers.ValidationError('Invalid credentials')
-        else:
-            # Other users login with password
-            if not password:
-                raise serializers.ValidationError('Password is required')
-            if not user.check_password(password):
-                raise serializers.ValidationError('Invalid credentials')
+        # Authentication - All users use password
+        if not password:
+            raise serializers.ValidationError('Password is required')
+        if not user.check_password(password):
+            raise serializers.ValidationError('Invalid credentials')
         
         # Check if user is active
         if not user.is_active:

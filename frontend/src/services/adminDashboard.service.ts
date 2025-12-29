@@ -212,6 +212,46 @@ export interface Task {
   due_date: string;
   status: string;
   assigned_date: string;
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+}
+
+export interface TaskReply {
+  id: string;
+  content: string;
+  reply_type: 'TEACHER' | 'ADMIN';
+  replied_by: {
+    id: string;
+    name: string;
+    role: string;
+  };
+  created_at: string;
+}
+
+export interface TaskDetail {
+  id: string;
+  title: string;
+  description: string;
+  priority: string;
+  status: string;
+  teacher: {
+    id: string;
+    name: string;
+    employee_id: string;
+  };
+  school: {
+    id: string;
+    name: string;
+  };
+  assigned_by: {
+    id: string;
+    name: string;
+    role: string;
+  };
+  due_date: string | null;
+  created_at: string;
+  updated_at: string;
+  replies_count: number;
+  replies?: TaskReply[];
 }
 
 export interface CreateTaskData {
@@ -520,6 +560,21 @@ const adminDashboardService = {
     return response.data.data.tasks;
   },
 
+  async getTaskDetail(taskId: string): Promise<TaskDetail> {
+    const response = await api.get<{ success: boolean; data: TaskDetail }>(`/admin/teacher-tasks/${taskId}/`);
+    return response.data.data;
+  },
+
+  async addTaskReply(taskId: string, content: string): Promise<TaskReply> {
+    const response = await api.post<{ success: boolean; data: TaskReply }>(`/admin/teacher-tasks/${taskId}/reply/`, { content });
+    return response.data.data;
+  },
+
+  async updateTaskStatus(taskId: string, status: string): Promise<TaskDetail> {
+    const response = await api.post<{ success: boolean; data: TaskDetail }>(`/admin/teacher-tasks/${taskId}/status/`, { status });
+    return response.data.data;
+  },
+
   // ============ REPORTS ============
   
   async getStudentReport(params: {
@@ -673,6 +728,7 @@ export interface SchoolTeacherDetail {
     can_mark_attendance: boolean;
     can_assign_homework: boolean;
     can_grade_assignments: boolean;
+    can_update_pii: boolean;
   };
   attendance_summary: {
     total_records_marked: number;
@@ -829,6 +885,7 @@ export interface TeacherFullDetail {
     can_mark_attendance: boolean;
     can_assign_homework: boolean;
     can_grade_assignments: boolean;
+    can_update_pii: boolean;
   };
   attendance_class?: {
     id: string;
@@ -921,6 +978,21 @@ const teacherTaskMethods = {
     return response.data.data;
   },
 
+  async getTeacherPermissions(teacherId: string): Promise<TeacherPermissionsResponse> {
+    const response = await api.get<{ success: boolean; data: TeacherPermissionsResponse }>(
+      `/admin/teacher-detail/${teacherId}/permissions/`
+    );
+    return response.data.data;
+  },
+
+  async updateTeacherPermissions(teacherId: string, permissions: TeacherPermissions): Promise<TeacherPermissionsResponse> {
+    const response = await api.put<{ success: boolean; data: TeacherPermissionsResponse }>(
+      `/admin/teacher-detail/${teacherId}/permissions/update/`,
+      permissions
+    );
+    return response.data.data;
+  },
+
   async updateTeacherSubjects(teacherId: string, subjects: SubjectAssignment[]): Promise<any> {
     const response = await api.put<{ success: boolean; data: any }>(
       `/admin/teacher-detail/${teacherId}/subjects/`,
@@ -960,8 +1032,22 @@ export interface UpdateTeacherData {
   can_mark_attendance?: boolean;
   can_assign_homework?: boolean;
   can_grade_assignments?: boolean;
+  can_update_pii?: boolean;
   school_id?: string;
   attendance_class_id?: string | null;
+}
+
+export interface TeacherPermissions {
+  can_mark_attendance: boolean;
+  can_assign_homework: boolean;
+  can_grade_assignments: boolean;
+  can_update_pii: boolean;
+}
+
+export interface TeacherPermissionsResponse {
+  teacher_id: string;
+  teacher_name: string;
+  permissions: TeacherPermissions;
 }
 
 export interface SubjectAssignment {

@@ -82,6 +82,7 @@ export default function TeacherDetailPage({ teacherId, onBack }: TeacherDetailPa
     can_mark_attendance: false,
     can_assign_homework: false,
     can_grade_assignments: false,
+    can_update_pii: false,
   });
   const [editSubjects, setEditSubjects] = useState<Array<{
     subject_id: string;
@@ -286,11 +287,25 @@ export default function TeacherDetailPage({ teacherId, onBack }: TeacherDetailPa
         specialization: teacher.specialization || '',
       });
     } else if (section === 'permissions') {
-      setEditPermissions({
-        can_mark_attendance: teacher.permissions?.can_mark_attendance || false,
-        can_assign_homework: teacher.permissions?.can_assign_homework || false,
-        can_grade_assignments: teacher.permissions?.can_grade_assignments || false,
-      });
+      // Load permissions from dedicated API for accuracy
+      try {
+        const permData = await adminDashboardService.getTeacherPermissions(teacher.id);
+        setEditPermissions({
+          can_mark_attendance: permData.permissions.can_mark_attendance,
+          can_assign_homework: permData.permissions.can_assign_homework,
+          can_grade_assignments: permData.permissions.can_grade_assignments,
+          can_update_pii: permData.permissions.can_update_pii,
+        });
+      } catch (err) {
+        console.error('Failed to load permissions:', err);
+        // Fallback to teacher data
+        setEditPermissions({
+          can_mark_attendance: teacher.permissions?.can_mark_attendance || false,
+          can_assign_homework: teacher.permissions?.can_assign_homework || false,
+          can_grade_assignments: teacher.permissions?.can_grade_assignments || false,
+          can_update_pii: teacher.permissions?.can_update_pii || false,
+        });
+      }
     } else if (section === 'subjects') {
       // Load available subjects
       setLoadingOptions(true);
@@ -364,7 +379,7 @@ export default function TeacherDetailPage({ teacherId, onBack }: TeacherDetailPa
       if (editSection === 'profile') {
         await adminDashboardService.updateTeacherProfile(teacher.id, editProfile);
       } else if (editSection === 'permissions') {
-        await adminDashboardService.updateTeacherProfile(teacher.id, editPermissions);
+        await adminDashboardService.updateTeacherPermissions(teacher.id, editPermissions);
       } else if (editSection === 'subjects') {
         await adminDashboardService.updateTeacherSubjects(teacher.id, editSubjects);
       } else if (editSection === 'classes') {
@@ -654,6 +669,7 @@ export default function TeacherDetailPage({ teacherId, onBack }: TeacherDetailPa
                 { key: 'can_mark_attendance', label: 'Mark Attendance' },
                 { key: 'can_assign_homework', label: 'Assign Homework' },
                 { key: 'can_grade_assignments', label: 'Grade Assignments' },
+                { key: 'can_update_pii', label: 'Edit Student Info (PII)' },
               ].map((perm) => (
                 <div
                   key={perm.key}
@@ -1384,45 +1400,109 @@ export default function TeacherDetailPage({ teacherId, onBack }: TeacherDetailPa
 
                   {/* Permissions Section */}
                   {editSection === 'permissions' && (
-                    <div className="space-y-4">
-                      <p className="text-sm text-gray-500 mb-4">
-                        Configure what actions this teacher can perform in the system.
+                    <div className="space-y-3">
+                      <p className="text-sm text-gray-500 mb-2">
+                        Configure what actions this teacher can perform in the system. Click to toggle.
                       </p>
-                      <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                      
+                      {/* Mark Attendance */}
+                      <label className={`flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                        editPermissions.can_mark_attendance 
+                          ? 'bg-blue-50 border-blue-500' 
+                          : 'bg-gray-50 border-transparent hover:bg-gray-100'
+                      }`}>
                         <input
                           type="checkbox"
                           checked={editPermissions.can_mark_attendance}
                           onChange={(e) => setEditPermissions({ ...editPermissions, can_mark_attendance: e.target.checked })}
-                          className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
-                        <div>
-                          <p className="font-medium text-gray-900">Mark Attendance</p>
-                          <p className="text-sm text-gray-500">Can mark student attendance for their classes</p>
+                        <div className="flex-1">
+                          <p className={`font-medium ${editPermissions.can_mark_attendance ? 'text-blue-900' : 'text-gray-900'}`}>
+                            Mark Attendance
+                          </p>
+                          <p className={`text-sm ${editPermissions.can_mark_attendance ? 'text-blue-600' : 'text-gray-500'}`}>
+                            Can mark student attendance for their classes
+                          </p>
                         </div>
+                        {editPermissions.can_mark_attendance && (
+                          <span className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded">ON</span>
+                        )}
                       </label>
-                      <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                      
+                      {/* Assign Homework */}
+                      <label className={`flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                        editPermissions.can_assign_homework 
+                          ? 'bg-blue-50 border-blue-500' 
+                          : 'bg-gray-50 border-transparent hover:bg-gray-100'
+                      }`}>
                         <input
                           type="checkbox"
                           checked={editPermissions.can_assign_homework}
                           onChange={(e) => setEditPermissions({ ...editPermissions, can_assign_homework: e.target.checked })}
-                          className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
-                        <div>
-                          <p className="font-medium text-gray-900">Assign Homework</p>
-                          <p className="text-sm text-gray-500">Can assign homework and tasks to students</p>
+                        <div className="flex-1">
+                          <p className={`font-medium ${editPermissions.can_assign_homework ? 'text-blue-900' : 'text-gray-900'}`}>
+                            Assign Homework
+                          </p>
+                          <p className={`text-sm ${editPermissions.can_assign_homework ? 'text-blue-600' : 'text-gray-500'}`}>
+                            Can assign homework and tasks to students
+                          </p>
                         </div>
+                        {editPermissions.can_assign_homework && (
+                          <span className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded">ON</span>
+                        )}
                       </label>
-                      <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                      
+                      {/* Grade Assignments */}
+                      <label className={`flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                        editPermissions.can_grade_assignments 
+                          ? 'bg-blue-50 border-blue-500' 
+                          : 'bg-gray-50 border-transparent hover:bg-gray-100'
+                      }`}>
                         <input
                           type="checkbox"
                           checked={editPermissions.can_grade_assignments}
                           onChange={(e) => setEditPermissions({ ...editPermissions, can_grade_assignments: e.target.checked })}
-                          className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
-                        <div>
-                          <p className="font-medium text-gray-900">Grade Assignments</p>
-                          <p className="text-sm text-gray-500">Can grade and review student assignments</p>
+                        <div className="flex-1">
+                          <p className={`font-medium ${editPermissions.can_grade_assignments ? 'text-blue-900' : 'text-gray-900'}`}>
+                            Grade Assignments
+                          </p>
+                          <p className={`text-sm ${editPermissions.can_grade_assignments ? 'text-blue-600' : 'text-gray-500'}`}>
+                            Can grade and review student assignments
+                          </p>
                         </div>
+                        {editPermissions.can_grade_assignments && (
+                          <span className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded">ON</span>
+                        )}
+                      </label>
+                      
+                      {/* Edit Student PII */}
+                      <label className={`flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                        editPermissions.can_update_pii 
+                          ? 'bg-blue-50 border-blue-500' 
+                          : 'bg-gray-50 border-transparent hover:bg-gray-100'
+                      }`}>
+                        <input
+                          type="checkbox"
+                          checked={editPermissions.can_update_pii}
+                          onChange={(e) => setEditPermissions({ ...editPermissions, can_update_pii: e.target.checked })}
+                          className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <p className={`font-medium ${editPermissions.can_update_pii ? 'text-blue-900' : 'text-gray-900'}`}>
+                            Edit Student Info (PII)
+                          </p>
+                          <p className={`text-sm ${editPermissions.can_update_pii ? 'text-blue-600' : 'text-gray-500'}`}>
+                            Can edit student personal information like name, phone, parent details
+                          </p>
+                        </div>
+                        {editPermissions.can_update_pii && (
+                          <span className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded">ON</span>
+                        )}
                       </label>
                     </div>
                   )}

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import adminDashboardService, { DashboardData, School as SchoolType } from '../../services/adminDashboard.service';
+import teacherDashboardService from '../../services/teacherDashboard.service';
 import SchoolsList from './SchoolsList';
 import TeachersList from './TeachersList';
 import StudentsList from './StudentsList';
@@ -33,6 +34,7 @@ import AddTeacherModal from '../../components/admin/AddTeacherModal';
 import CreateNotificationModal from '../../components/admin/CreateNotificationModal';
 import CreateTaskModal from '../../components/admin/CreateTaskModal';
 import NotificationsDropdown from '../../components/admin/NotificationsDropdown';
+import NewsSection, { NewsItem } from '../../components/shared/NewsSection';
 
 type ActiveView = 'dashboard' | 'schools' | 'teachers' | 'students' | 'classes' | 'subjects' | 'notifications' | 'tasks' | 'payments' | 'activities' | 'reports' | 'settings';
 
@@ -50,10 +52,15 @@ export default function AdminDashboard() {
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [showCreateNotification, setShowCreateNotification] = useState(false);
   const [showCreateTask, setShowCreateTask] = useState(false);
+  
+  // News state
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [newsLoading, setNewsLoading] = useState(true);
 
   useEffect(() => {
     loadDashboardData();
     loadSchools();
+    loadNews();
   }, []);
 
   // Close sidebar when menu item is clicked on mobile
@@ -83,6 +90,18 @@ export default function AdminDashboard() {
       }
     } catch (err) {
       console.error('Failed to load schools:', err);
+    }
+  };
+
+  const loadNews = async () => {
+    try {
+      setNewsLoading(true);
+      const data = await teacherDashboardService.getNews(10);
+      setNews(data as NewsItem[]);
+    } catch (err) {
+      console.error('Failed to load news:', err);
+    } finally {
+      setNewsLoading(false);
     }
   };
 
@@ -188,6 +207,11 @@ export default function AdminDashboard() {
             </select>
           </div>
         )}
+
+        {/* News Section */}
+        <div className="mb-6 sm:mb-8">
+          <NewsSection news={news} loading={newsLoading} />
+        </div>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-6 sm:mb-8">

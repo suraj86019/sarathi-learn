@@ -24,9 +24,7 @@ User = get_user_model()
 class LoginView(APIView):
     """
     User Login View
-    Supports different authentication methods based on user type:
-    - Students: email/phone + date of birth
-    - Others: email/phone + password
+    All users authenticate with email/phone + password
     """
     permission_classes = [permissions.AllowAny]
     

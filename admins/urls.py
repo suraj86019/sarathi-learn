@@ -151,6 +151,13 @@ urlpatterns = [
     }), name='mark-teacher-attendance'),
     
     # Teacher Edit Endpoints
+    path('teacher-detail/<uuid:teacher_id>/permissions/', views.TeacherTaskViewSet.as_view({
+        'get': 'get_teacher_permissions',
+    }), name='get-teacher-permissions'),
+    path('teacher-detail/<uuid:teacher_id>/permissions/update/', views.TeacherTaskViewSet.as_view({
+        'put': 'update_teacher_permissions',
+        'patch': 'update_teacher_permissions'
+    }), name='update-teacher-permissions'),
     path('teacher-detail/<uuid:teacher_id>/update/', views.TeacherTaskViewSet.as_view({
         'put': 'update_teacher',
         'patch': 'update_teacher'

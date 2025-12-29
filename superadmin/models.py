@@ -241,7 +241,7 @@ class Class(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     # Class Information
-    grade_number = models.IntegerField(unique=True, help_text="Grade/Class number (1-12)")
+    grade_number = models.IntegerField(unique=True, default=1, help_text="Grade/Class number (1-12)")
     name = models.CharField(max_length=50, help_text="Display name (e.g., 'Class 5', '5th Standard')")
     description = models.TextField(blank=True, null=True)
     
@@ -641,6 +641,16 @@ class AnnouncementTarget(models.Model):
         help_text="Target all users in this school (school-level)"
     )
 
+    # Class-level targeting
+    school_class = models.ForeignKey(
+        'SchoolClass',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='announcement_targets',
+        help_text="Target all students in this class (class-level)"
+    )
+
     # User-level targeting
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -671,11 +681,12 @@ class AnnouncementTarget(models.Model):
         db_table = 'announcement_targets'
         verbose_name = 'Announcement Target'
         verbose_name_plural = 'Announcement Targets'
-        unique_together = ('announcement', 'school', 'user')  # Prevent duplicate targets
         indexes = [
             models.Index(fields=['announcement', 'school']),
+            models.Index(fields=['announcement', 'school_class']),
             models.Index(fields=['announcement', 'user']),
             models.Index(fields=['school']),
+            models.Index(fields=['school_class']),
             models.Index(fields=['user']),
             models.Index(fields=['is_sent']),
         ]
@@ -683,6 +694,8 @@ class AnnouncementTarget(models.Model):
     def __str__(self):
         if self.school:
             return f"{self.announcement.title} → {self.school.name}"
+        elif self.school_class:
+            return f"{self.announcement.title} → {self.school_class.full_name}"
         elif self.user:
             return f"{self.announcement.title} → {self.user.get_full_name()}"
         else:
@@ -693,6 +706,8 @@ class AnnouncementTarget(models.Model):
         """Determine target type based on which field is set"""
         if self.school:
             return 'SCHOOL'
+        elif self.school_class:
+            return 'CLASS'
         elif self.user:
             return 'USER'
         return None
@@ -702,6 +717,7 @@ class AnnouncementTarget(models.Model):
         Get the actual users this target should send to
         """
         from users.models import User, UserRole
+        from students.models import StudentProfile
 
         if self.school:
             # School-level: Get all users associated with this school
@@ -719,8 +735,182 @@ class AnnouncementTarget(models.Model):
 
             return school_users
 
+        elif self.school_class:
+            # Class-level: Get all students in this class
+            student_user_ids = StudentProfile.objects.filter(
+                school=self.school_class.school,
+                current_class=self.school_class.class_obj
+            ).values_list('user_id', flat=True)
+            return User.objects.filter(id__in=student_user_ids, is_active=True)
+
         elif self.user:
             # User-level: Return the specific user
             return User.objects.filter(id=self.user.id, is_active=True)
 
         return User.objects.none()
+
+
+class News(models.Model):
+    """
+    News Model
+    Platform-wide news created by super admin
+    Displayed to all users on the platform
+    """
+    
+    PRIORITY_CHOICES = [
+        ('LOW', 'Low'),
+        ('NORMAL', 'Normal'),
+        ('HIGH', 'High'),
+        ('URGENT', 'Urgent'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('DRAFT', 'Draft'),
+        ('PUBLISHED', 'Published'),
+        ('ARCHIVED', 'Archived'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=255, help_text="News headline")
+    content = models.TextField(help_text="Full news content")
+    summary = models.CharField(max_length=500, blank=True, null=True, help_text="Short summary for preview")
+    
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='NORMAL')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    
+    # Optional image
+    image_url = models.URLField(blank=True, null=True, help_text="Cover image URL")
+    
+    # Publish settings
+    published_at = models.DateTimeField(blank=True, null=True)
+    expires_at = models.DateTimeField(blank=True, null=True, help_text="When the news should no longer be displayed")
+    
+    # Audit fields
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_news'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        db_table = 'platform_news'
+        verbose_name = 'News'
+        verbose_name_plural = 'News'
+        ordering = ['-published_at', '-created_at']
+    
+    def __str__(self):
+        return self.title
+    
+    def publish(self):
+        """Publish the news"""
+        self.status = 'PUBLISHED'
+        self.published_at = timezone.now()
+        self.save()
+    
+    def archive(self):
+        """Archive the news"""
+        self.status = 'ARCHIVED'
+        self.save()
+
+
+class GovernmentScheme(models.Model):
+    """
+    Government Scheme / Event / Exam
+    Platform-wide announcements about government programs, exams, scholarships, etc.
+    Created by Super Admin
+    """
+    
+    SCHEME_TYPE_CHOICES = [
+        ('EXAM', 'Competitive Exam'),
+        ('SCHOLARSHIP', 'Scholarship'),
+        ('EVENT', 'Event'),
+        ('PROGRAM', 'Government Program'),
+        ('COMPETITION', 'Competition'),
+        ('ADMISSION', 'Admission'),
+        ('OTHER', 'Other'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('DRAFT', 'Draft'),
+        ('PUBLISHED', 'Published'),
+        ('ARCHIVED', 'Archived'),
+    ]
+    
+    PRIORITY_CHOICES = [
+        ('LOW', 'Low'),
+        ('NORMAL', 'Normal'),
+        ('HIGH', 'High'),
+        ('URGENT', 'Urgent'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Scheme Details
+    title = models.CharField(max_length=500)
+    description = models.TextField()
+    scheme_type = models.CharField(max_length=20, choices=SCHEME_TYPE_CHOICES, default='OTHER')
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='NORMAL')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    
+    # Eligibility & Requirements
+    eligibility = models.TextField(blank=True, null=True, help_text="Who can apply/participate")
+    requirements = models.TextField(blank=True, null=True, help_text="Documents or prerequisites needed")
+    
+    # Dates
+    start_date = models.DateField(blank=True, null=True, help_text="Start date of the scheme/exam")
+    end_date = models.DateField(blank=True, null=True, help_text="End date or deadline")
+    application_deadline = models.DateField(blank=True, null=True)
+    
+    # Links
+    official_link = models.URLField(blank=True, null=True, help_text="Official website or registration link")
+    apply_link = models.URLField(blank=True, null=True, help_text="Direct application link")
+    
+    # Optional image
+    image_url = models.URLField(blank=True, null=True)
+    
+    # Target audience
+    target_classes = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of class names that this scheme is for (e.g., ['Class 10', 'Class 12']). Empty means all classes."
+    )
+    
+    # Publish settings
+    published_at = models.DateTimeField(blank=True, null=True)
+    
+    # Audit fields
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_schemes'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        db_table = 'government_schemes'
+        verbose_name = 'Government Scheme'
+        verbose_name_plural = 'Government Schemes'
+        ordering = ['-priority', '-published_at', '-created_at']
+        indexes = [
+            models.Index(fields=['status', 'scheme_type']),
+            models.Index(fields=['application_deadline']),
+            models.Index(fields=['-priority', '-published_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.title} ({self.get_scheme_type_display()})"
+    
+    def publish(self):
+        """Publish the scheme"""
+        self.status = 'PUBLISHED'
+        self.published_at = timezone.now()
+        self.save()

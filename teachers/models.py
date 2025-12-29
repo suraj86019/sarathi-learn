@@ -511,6 +511,48 @@ class StudentTask(models.Model):
         return f"{self.title} - {self.student.user.get_full_name()}"
 
 
+class StudentTaskReply(models.Model):
+    """
+    Student Task Reply
+    Replies/responses to student tasks from either student or teacher
+    """
+    
+    REPLY_TYPE_CHOICES = [
+        ('STUDENT', 'Student Reply'),
+        ('TEACHER', 'Teacher Reply'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    task = models.ForeignKey(
+        StudentTask,
+        on_delete=models.CASCADE,
+        related_name='replies'
+    )
+    
+    content = models.TextField()
+    reply_type = models.CharField(max_length=10, choices=REPLY_TYPE_CHOICES)
+    
+    # Who replied
+    replied_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='student_task_replies'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'student_task_replies'
+        verbose_name = 'Student Task Reply'
+        verbose_name_plural = 'Student Task Replies'
+        ordering = ['created_at']
+    
+    def __str__(self):
+        return f"Reply to {self.task.title} by {self.replied_by.get_full_name() if self.replied_by else 'Unknown'}"
+
+
 class SchoolHoliday(models.Model):
     """
     School Holiday
@@ -554,3 +596,354 @@ class SchoolHoliday(models.Model):
     
     def __str__(self):
         return f"{self.name} - {self.date} ({self.school.name})"
+
+
+class Activity(models.Model):
+    """
+    Activity
+    Activities created by teachers for classes or individual students
+    """
+    
+    LEVEL_CHOICES = [
+        ('CLASS', 'Class Level'),
+        ('STUDENT', 'Student Level'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('DRAFT', 'Draft'),
+        ('ACTIVE', 'Active'),
+        ('CLOSED', 'Closed'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Activity Details
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    level = models.CharField(max_length=10, choices=LEVEL_CHOICES, default='CLASS')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='ACTIVE')
+    
+    # Subject Reference
+    subject = models.ForeignKey(
+        'superadmin.Subject',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='activities'
+    )
+    
+    # Class Reference (for CLASS level activities)
+    school_class = models.ForeignKey(
+        'superadmin.Class',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='activities'
+    )
+    
+    # Student Reference (for STUDENT level activities)
+    student = models.ForeignKey(
+        'students.StudentProfile',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='assigned_activities'
+    )
+    
+    # School Reference
+    school = models.ForeignKey(
+        'superadmin.School',
+        on_delete=models.CASCADE,
+        related_name='activities'
+    )
+    
+    # Meeting Links
+    google_meet_link = models.URLField(max_length=500, blank=True, null=True)
+    zoom_link = models.URLField(max_length=500, blank=True, null=True)
+    other_link = models.URLField(max_length=500, blank=True, null=True)
+    link_label = models.CharField(max_length=100, blank=True, null=True, help_text="Label for other_link")
+    
+    # Schedule
+    scheduled_date = models.DateField(blank=True, null=True)
+    scheduled_time = models.TimeField(blank=True, null=True)
+    due_date = models.DateField(blank=True, null=True)
+    
+    # Created By
+    created_by = models.ForeignKey(
+        TeacherProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_activities'
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'activities'
+        verbose_name = 'Activity'
+        verbose_name_plural = 'Activities'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['school_class', '-created_at']),
+            models.Index(fields=['school', '-created_at']),
+            models.Index(fields=['created_by', '-created_at']),
+            models.Index(fields=['level', 'status']),
+            models.Index(fields=['scheduled_date']),
+        ]
+    
+    def __str__(self):
+        if self.level == 'CLASS':
+            return f"{self.title} - {self.school_class.full_name if self.school_class else 'No Class'}"
+        return f"{self.title} - {self.student.user.get_full_name() if self.student else 'No Student'}"
+    
+    @property
+    def submissions_count(self):
+        return self.submissions.count()
+    
+    @property
+    def completed_submissions_count(self):
+        return self.submissions.filter(status='COMPLETED').count()
+
+
+class ActivitySubmission(models.Model):
+    """
+    Activity Submission
+    Student submissions/responses to activities
+    """
+    
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('SUBMITTED', 'Submitted'),
+        ('COMPLETED', 'Completed'),
+        ('LATE', 'Late Submission'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Activity Reference
+    activity = models.ForeignKey(
+        Activity,
+        on_delete=models.CASCADE,
+        related_name='submissions'
+    )
+    
+    # Student Reference
+    student = models.ForeignKey(
+        'students.StudentProfile',
+        on_delete=models.CASCADE,
+        related_name='activity_submissions'
+    )
+    
+    # Submission Details
+    response = models.TextField(blank=True, null=True, help_text="Student's response/answer")
+    attachment_url = models.URLField(max_length=500, blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    
+    # Grading (optional)
+    score = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
+    max_score = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
+    feedback = models.TextField(blank=True, null=True)
+    graded_by = models.ForeignKey(
+        TeacherProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='graded_submissions'
+    )
+    graded_at = models.DateTimeField(blank=True, null=True)
+    
+    # Timestamps
+    submitted_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'activity_submissions'
+        verbose_name = 'Activity Submission'
+        verbose_name_plural = 'Activity Submissions'
+        unique_together = ('activity', 'student')
+        ordering = ['-submitted_at', '-created_at']
+        indexes = [
+            models.Index(fields=['activity', 'status']),
+            models.Index(fields=['student', '-created_at']),
+            models.Index(fields=['status']),
+        ]
+    
+    def __str__(self):
+        return f"{self.student.user.get_full_name()} - {self.activity.title}"
+
+
+class Report(models.Model):
+    """
+    Report/Progress Card
+    Created by teacher for a class (e.g., Half Yearly Exam, Annual Exam)
+    """
+    
+    REPORT_TYPE_CHOICES = [
+        ('EXAM', 'Exam Report'),
+        ('PROGRESS', 'Progress Report'),
+        ('ASSESSMENT', 'Assessment'),
+        ('QUARTERLY', 'Quarterly Report'),
+        ('HALF_YEARLY', 'Half Yearly Report'),
+        ('ANNUAL', 'Annual Report'),
+        ('OTHER', 'Other'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('DRAFT', 'Draft'),
+        ('PUBLISHED', 'Published'),
+        ('ARCHIVED', 'Archived'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Basic Info
+    name = models.CharField(max_length=255, help_text="e.g., Half Yearly Exam 2024")
+    report_type = models.CharField(max_length=20, choices=REPORT_TYPE_CHOICES, default='EXAM')
+    description = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    
+    # Class Reference
+    school = models.ForeignKey(
+        'superadmin.School',
+        on_delete=models.CASCADE,
+        related_name='reports'
+    )
+    class_ref = models.ForeignKey(
+        'superadmin.Class',
+        on_delete=models.CASCADE,
+        related_name='reports'
+    )
+    
+    # Academic Period
+    academic_year = models.CharField(max_length=20, default='2024-2025')
+    exam_date = models.DateField(blank=True, null=True)
+    
+    # Subjects included in this report (stored as JSON)
+    subjects = models.JSONField(
+        default=list,
+        help_text="List of subject objects: [{id, name, max_marks}]"
+    )
+    
+    # Created by
+    created_by = models.ForeignKey(
+        TeacherProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_reports'
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    published_at = models.DateTimeField(blank=True, null=True)
+    
+    class Meta:
+        db_table = 'reports'
+        verbose_name = 'Report'
+        verbose_name_plural = 'Reports'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['school', 'class_ref', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['report_type', 'academic_year']),
+        ]
+    
+    def __str__(self):
+        return f"{self.name} - {self.class_ref.name}"
+
+
+class StudentMark(models.Model):
+    """
+    Student marks for a report
+    Stores individual subject marks for each student
+    """
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Report Reference
+    report = models.ForeignKey(
+        Report,
+        on_delete=models.CASCADE,
+        related_name='student_marks'
+    )
+    
+    # Student Reference
+    student = models.ForeignKey(
+        'students.StudentProfile',
+        on_delete=models.CASCADE,
+        related_name='report_marks'
+    )
+    
+    # Marks stored as JSON: {subject_id: {marks: 85, max_marks: 100, grade: 'A'}}
+    marks = models.JSONField(
+        default=dict,
+        help_text="Subject-wise marks: {subject_id: {marks: 85, max_marks: 100}}"
+    )
+    
+    # Calculated fields (updated on save)
+    total_marks = models.DecimalField(max_digits=7, decimal_places=2, default=0)
+    total_max_marks = models.DecimalField(max_digits=7, decimal_places=2, default=0)
+    percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    grade = models.CharField(max_length=5, blank=True, null=True)
+    rank = models.PositiveIntegerField(blank=True, null=True)
+    
+    # Teacher remarks
+    remarks = models.TextField(blank=True, null=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'student_marks'
+        verbose_name = 'Student Mark'
+        verbose_name_plural = 'Student Marks'
+        unique_together = ('report', 'student')
+        ordering = ['-percentage', 'student__roll_no']
+        indexes = [
+            models.Index(fields=['report', '-percentage']),
+            models.Index(fields=['student', '-created_at']),
+        ]
+    
+    def calculate_totals(self):
+        """Calculate total marks, max marks, percentage, and grade"""
+        total = 0
+        max_total = 0
+        for subject_id, data in self.marks.items():
+            if isinstance(data, dict):
+                total += float(data.get('marks', 0) or 0)
+                max_total += float(data.get('max_marks', 100) or 100)
+        
+        self.total_marks = total
+        self.total_max_marks = max_total
+        
+        if max_total > 0:
+            self.percentage = (total / max_total) * 100
+            # Calculate grade based on percentage
+            if self.percentage >= 90:
+                self.grade = 'A+'
+            elif self.percentage >= 80:
+                self.grade = 'A'
+            elif self.percentage >= 70:
+                self.grade = 'B+'
+            elif self.percentage >= 60:
+                self.grade = 'B'
+            elif self.percentage >= 50:
+                self.grade = 'C'
+            elif self.percentage >= 40:
+                self.grade = 'D'
+            else:
+                self.grade = 'F'
+        else:
+            self.percentage = 0
+            self.grade = 'N/A'
+    
+    def save(self, *args, **kwargs):
+        self.calculate_totals()
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.student.user.get_full_name()} - {self.report.name}"

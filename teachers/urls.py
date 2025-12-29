@@ -32,6 +32,10 @@ urlpatterns = [
     path('profile/', views.TeacherDashboardViewSet.as_view({
         'get': 'profile'
     }), name='teacher-profile'),
+    path('profile/update/', views.TeacherDashboardViewSet.as_view({
+        'put': 'update_profile',
+        'patch': 'update_profile'
+    }), name='teacher-profile-update'),
     path('school/', views.TeacherDashboardViewSet.as_view({
         'get': 'school'
     }), name='teacher-school'),
@@ -97,6 +101,13 @@ urlpatterns = [
     path('students/<uuid:pk>/update-pii/', views.TeacherStudentViewSet.as_view({
         'post': 'update_pii'
     }), name='student-update-pii'),
+    path('students/add/', views.TeacherStudentViewSet.as_view({
+        'post': 'add_student'
+    }), name='add-student'),
+    path('students/<uuid:pk>/update/', views.TeacherStudentViewSet.as_view({
+        'put': 'update_student',
+        'patch': 'update_student'
+    }), name='update-student'),
     path('students/<uuid:pk>/tasks/', views.TeacherStudentViewSet.as_view({
         'get': 'student_tasks'
     }), name='student-tasks'),
@@ -106,5 +117,85 @@ urlpatterns = [
     path('students/task/<uuid:task_id>/status/', views.TeacherStudentViewSet.as_view({
         'post': 'update_task_status'
     }), name='student-task-status'),
+    path('students/task/<uuid:task_id>/detail/', views.TeacherStudentViewSet.as_view({
+        'get': 'task_detail'
+    }), name='student-task-detail'),
+    path('students/task/<uuid:task_id>/reply/', views.TeacherStudentViewSet.as_view({
+        'post': 'add_task_reply'
+    }), name='student-task-reply'),
+    
+    # Activities / Schedule
+    path('activities/classes/', views.TeacherActivityViewSet.as_view({
+        'get': 'classes'
+    }), name='activity-classes'),
+    path('activities/classes/<uuid:class_id>/students/', views.TeacherActivityViewSet.as_view({
+        'get': 'class_students'
+    }), name='activity-class-students'),
+    path('activities/classes/<uuid:class_id>/activities/', views.TeacherActivityViewSet.as_view({
+        'get': 'class_activities'
+    }), name='activity-class-activities'),
+    path('activities/subjects/', views.TeacherActivityViewSet.as_view({
+        'get': 'subjects'
+    }), name='activity-subjects'),
+    path('activities/', views.TeacherActivityViewSet.as_view({
+        'get': 'list_all',
+        'post': 'create'
+    }), name='activities'),
+    path('activities/<uuid:pk>/', views.TeacherActivityViewSet.as_view({
+        'get': 'retrieve'
+    }), name='activity-detail'),
+    path('activities/<uuid:pk>/submissions/', views.TeacherActivityViewSet.as_view({
+        'get': 'submissions'
+    }), name='activity-submissions'),
+    path('activities/<uuid:pk>/status/', views.TeacherActivityViewSet.as_view({
+        'patch': 'update_status'
+    }), name='activity-status'),
+    path('activities/<uuid:pk>/update/', views.TeacherActivityViewSet.as_view({
+        'put': 'update_activity',
+        'patch': 'update_activity'
+    }), name='activity-update'),
+    path('activities/submissions/<uuid:submission_id>/grade/', views.TeacherActivityViewSet.as_view({
+        'patch': 'grade_submission'
+    }), name='activity-grade-submission'),
+    
+    # Announcements
+    path('announcements/', views.TeacherAnnouncementViewSet.as_view({
+        'get': 'list',
+        'post': 'create'
+    }), name='announcements'),
+    path('announcements/my/', views.TeacherAnnouncementViewSet.as_view({
+        'get': 'my_announcements'
+    }), name='my-announcements'),
+    path('announcements/classes/', views.TeacherAnnouncementViewSet.as_view({
+        'get': 'classes'
+    }), name='announcement-classes'),
+    path('announcements/classes/<uuid:class_id>/students/', views.TeacherAnnouncementViewSet.as_view({
+        'get': 'class_students'
+    }), name='announcement-class-students'),
+    
+    # Reports / Progress Cards
+    path('reports/', views.TeacherReportViewSet.as_view({
+        'get': 'list',
+        'post': 'create'
+    }), name='reports'),
+    path('reports/<uuid:pk>/', views.TeacherReportViewSet.as_view({
+        'get': 'retrieve',
+        'delete': 'destroy'
+    }), name='report-detail'),
+    path('reports/<uuid:pk>/marks/', views.TeacherReportViewSet.as_view({
+        'post': 'save_marks'
+    }), name='report-marks'),
+    path('reports/<uuid:pk>/publish/', views.TeacherReportViewSet.as_view({
+        'post': 'publish'
+    }), name='report-publish'),
+    path('reports/classes/', views.TeacherReportViewSet.as_view({
+        'get': 'classes'
+    }), name='report-classes'),
+    path('reports/classes/<uuid:class_id>/subjects/', views.TeacherReportViewSet.as_view({
+        'get': 'class_subjects'
+    }), name='report-class-subjects'),
+    path('reports/classes/<uuid:class_id>/students/', views.TeacherReportViewSet.as_view({
+        'get': 'class_students'
+    }), name='report-class-students'),
 ]
 

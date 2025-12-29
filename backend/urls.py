@@ -52,7 +52,7 @@ urlpatterns = [
     path('api/superadmin/', include('superadmin.urls')),  # Superadmin routes
     path('api/admin/', include('admins.urls')),  # Admin routes
     path('api/teachers/', include('teachers.urls', namespace='teachers')),  # Teacher routes
-    # path('api/students/', include('students.urls', namespace='students')),
+    path('api/students/', include('students.urls', namespace='students')),  # Student routes
     # path('api/ai-machine/', include('ai_machine.urls', namespace='ai_machine')),
 ]
 

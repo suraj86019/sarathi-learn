@@ -257,12 +257,39 @@ class TaskViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'])
     def task_history(self, request):
-        """Get task creation history"""
+        """Get task creation history - includes both homework and teacher tasks"""
         try:
             admin_profile = AdminProfile.objects.get(user=request.user)
             
             # Get schools managed by admin
             admin_schools = admin_profile.schools.all()
+
+            data = []
+            
+            # Get teacher tasks assigned by this admin or to teachers in their schools
+            from teachers.models import TeacherTask
+            teacher_tasks = TeacherTask.objects.filter(
+                Q(assigned_by=request.user) | Q(teacher__school__in=admin_schools)
+            ).select_related(
+                'teacher__user', 'teacher__school', 'assigned_by'
+            ).order_by('-created_at')[:100]
+            
+            for task in teacher_tasks:
+                data.append({
+                    'id': str(task.id),
+                    'title': task.title,
+                    'description': task.description[:100] + '...' if len(task.description) > 100 else task.description,
+                    'type': 'TASK',
+                    'assigned_to': task.teacher.user.get_full_name() if task.teacher else 'N/A',
+                    'assigned_to_id': str(task.teacher.id) if task.teacher else None,
+                    'school': task.teacher.school.name if task.teacher and task.teacher.school else 'N/A',
+                    'subject': 'N/A',
+                    'assigned_by': task.assigned_by.get_full_name() if task.assigned_by else 'System',
+                    'due_date': task.due_date.isoformat() if task.due_date else None,
+                    'status': task.status,
+                    'assigned_date': task.created_at.isoformat() if task.created_at else None,
+                    'priority': task.priority,
+                })
 
             # Get recent homework assignments from admin's schools
             from students.models import Homework
@@ -272,7 +299,6 @@ class TaskViewSet(viewsets.ViewSet):
                 'student__user', 'student__school', 'subject', 'assigned_by__user'
             ).order_by('-assigned_date')[:50]
 
-            data = []
             for task in recent_tasks:
                 data.append({
                     'id': str(task.id),
@@ -284,10 +310,13 @@ class TaskViewSet(viewsets.ViewSet):
                     'school': task.student.school.name if task.student.school else 'N/A',
                     'subject': task.subject.name if task.subject else 'N/A',
                     'assigned_by': task.assigned_by.user.get_full_name() if task.assigned_by else 'System',
-                    'due_date': task.due_date,
+                    'due_date': task.due_date.isoformat() if task.due_date else None,
                     'status': task.status,
-                    'assigned_date': task.assigned_date
+                    'assigned_date': task.assigned_date.isoformat() if task.assigned_date else None,
                 })
+
+            # Sort by assigned_date descending
+            data.sort(key=lambda x: x['assigned_date'] or '', reverse=True)
 
             return ResponseUtils.create_success_response(
                 'Task history retrieved successfully',
@@ -1230,6 +1259,87 @@ class TeacherTaskViewSet(viewsets.ViewSet):
             
         except TeacherProfile.DoesNotExist:
             return ResponseUtils.create_error_response('Teacher not found', status_code=404)
+        except Exception as e:
+            return ResponseUtils.create_error_response(str(e))
+
+    @action(detail=False, methods=['get'], url_path='teacher/(?P<teacher_id>[^/.]+)/permissions')
+    def get_teacher_permissions(self, request, teacher_id=None):
+        """Get teacher permissions"""
+        try:
+            admin_profile = AdminProfile.objects.get(user=request.user)
+            teacher = TeacherProfile.objects.select_related('user', 'school').get(id=teacher_id)
+            
+            # Verify admin has access
+            if not admin_profile.has_school_access(teacher.school):
+                return ResponseUtils.create_error_response("You don't have access to this teacher's school")
+            
+            return ResponseUtils.create_success_response(
+                'Permissions retrieved successfully',
+                {
+                    'teacher_id': str(teacher.id),
+                    'teacher_name': teacher.user.get_full_name(),
+                    'permissions': {
+                        'can_mark_attendance': teacher.can_mark_attendance,
+                        'can_assign_homework': teacher.can_assign_homework,
+                        'can_grade_assignments': teacher.can_grade_assignments,
+                        'can_update_pii': teacher.can_update_pii,
+                    }
+                }
+            )
+            
+        except TeacherProfile.DoesNotExist:
+            return ResponseUtils.create_error_response('Teacher not found')
+        except Exception as e:
+            return ResponseUtils.create_error_response(str(e))
+
+    @action(detail=False, methods=['put', 'patch'], url_path='teacher/(?P<teacher_id>[^/.]+)/permissions/update')
+    def update_teacher_permissions(self, request, teacher_id=None):
+        """Update teacher permissions only"""
+        try:
+            admin_profile = AdminProfile.objects.get(user=request.user)
+            teacher = TeacherProfile.objects.select_related('user', 'school').get(id=teacher_id)
+            
+            # Verify admin has access
+            if not admin_profile.has_school_access(teacher.school):
+                return ResponseUtils.create_error_response("You don't have access to this teacher's school")
+            
+            # Update permissions
+            if 'can_mark_attendance' in request.data:
+                teacher.can_mark_attendance = request.data['can_mark_attendance']
+            if 'can_assign_homework' in request.data:
+                teacher.can_assign_homework = request.data['can_assign_homework']
+            if 'can_grade_assignments' in request.data:
+                teacher.can_grade_assignments = request.data['can_grade_assignments']
+            if 'can_update_pii' in request.data:
+                teacher.can_update_pii = request.data['can_update_pii']
+            
+            teacher.save()
+            
+            # Log activity
+            ActivityLog.objects.create(
+                user=admin_profile.user,
+                action='UPDATE',
+                description=f"Updated permissions for teacher {teacher.user.get_full_name()}",
+                target_type='TeacherProfile',
+                target_id=str(teacher.id)
+            )
+            
+            return ResponseUtils.create_success_response(
+                'Permissions updated successfully',
+                {
+                    'teacher_id': str(teacher.id),
+                    'teacher_name': teacher.user.get_full_name(),
+                    'permissions': {
+                        'can_mark_attendance': teacher.can_mark_attendance,
+                        'can_assign_homework': teacher.can_assign_homework,
+                        'can_grade_assignments': teacher.can_grade_assignments,
+                        'can_update_pii': teacher.can_update_pii,
+                    }
+                }
+            )
+            
+        except TeacherProfile.DoesNotExist:
+            return ResponseUtils.create_error_response('Teacher not found')
         except Exception as e:
             return ResponseUtils.create_error_response(str(e))
 
