@@ -194,3 +194,5 @@ Training sessions for teachers will be conducted soon. Embrace digital learning!
         self.stdout.write(self.style.SUCCESS(f'\nSuccessfully created {created_count} news items!'))
 
 
+
+

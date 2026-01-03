@@ -10,6 +10,7 @@ import StudentDashboard from '@/pages/student/Dashboard';
 import TeacherDashboard from '@/pages/teacher/Dashboard';
 import AdminDashboard from '@/pages/admin/Dashboard';
 import SuperAdminDashboard from '@/pages/superadmin/Dashboard';
+import SchoolDetailPage from '@/pages/superadmin/SchoolDetailPage';
 import AIMachineDashboard from '@/pages/ai/MachineDashboard';
 import NotFoundPage from '@/pages/NotFoundPage';
 
@@ -48,7 +49,8 @@ function App() {
             <Route path="/admin/*" element={<AdminDashboard />} />
 
             {/* Super Admin Routes */}
-            <Route path="/super-admin/*" element={<SuperAdminDashboard />} />
+            <Route path="/super-admin" element={<SuperAdminDashboard />} />
+            <Route path="/super-admin/schools/:schoolId" element={<SchoolDetailPage />} />
 
             {/* AI Machine Routes */}
             <Route path="/ai-machine/*" element={<AIMachineDashboard />} />

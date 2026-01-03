@@ -308,3 +308,745 @@ class CreateTeacherView(generics.CreateAPIView):
             return ResponseUtils.create_error_response(str(e))
         except Exception as e:
             return ResponseUtils.create_error_response(f'Error creating teacher: {str(e)}', status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ========== SUPER ADMIN MANAGEMENT VIEWSETS ==========
+
+class SuperAdminSchoolViewSet(viewsets.ViewSet):
+    """
+    ViewSet for Super Admin school management operations
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    
+    def list(self, request):
+        """
+        Get paginated list of all schools
+        GET /superadmin/manage/schools/
+        Query params: page, page_size, status, state, district, search
+        """
+        from .services import SuperAdminSchoolService
+        
+        try:
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 20))
+            
+            filters = {
+                'status': request.query_params.get('status'),
+                'state': request.query_params.get('state'),
+                'district': request.query_params.get('district'),
+                'search': request.query_params.get('search'),
+            }
+            
+            data = SuperAdminSchoolService.get_all_schools(page, page_size, filters)
+            return Response({
+                'success': True,
+                'data': data
+            })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def retrieve(self, request, pk=None):
+        """
+        Get school details
+        GET /superadmin/manage/schools/<id>/
+        """
+        from .services import SuperAdminSchoolService
+        
+        try:
+            data = SuperAdminSchoolService.get_school_detail(pk)
+            if data:
+                return Response({
+                    'success': True,
+                    'data': data
+                })
+            return Response({
+                'success': False,
+                'error': 'School not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def create(self, request):
+        """
+        Create a new school
+        POST /superadmin/manage/schools/
+        """
+        from .services import SuperAdminSchoolService
+        
+        try:
+            data = request.data
+            school = SuperAdminSchoolService.create_school(data)
+            return Response({
+                'success': True,
+                'message': 'School created successfully',
+                'data': SuperAdminSchoolService._format_school(school)
+            }, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def update(self, request, pk=None):
+        """
+        Update school information
+        PUT /superadmin/manage/schools/<id>/
+        """
+        from .services import SuperAdminSchoolService
+        
+        try:
+            data = request.data
+            school = SuperAdminSchoolService.update_school(pk, data)
+            return Response({
+                'success': True,
+                'message': 'School updated successfully',
+                'data': SuperAdminSchoolService._format_school(school)
+            })
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
+    def update_status(self, request, pk=None):
+        """
+        Update school status (activate, pause, suspend)
+        POST /superadmin/manage/schools/<id>/update_status/
+        Body: { "status": "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING" }
+        """
+        from .services import SuperAdminSchoolService
+        
+        try:
+            new_status = request.data.get('status')
+            if not new_status:
+                return Response({
+                    'success': False,
+                    'error': 'Status is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            school = SuperAdminSchoolService.update_school_status(pk, new_status, request.user)
+            return Response({
+                'success': True,
+                'message': f'School status updated to {new_status}',
+                'data': SuperAdminSchoolService._format_school(school)
+            })
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['get'])
+    def teachers(self, request, pk=None):
+        """
+        Get paginated teachers for a school
+        GET /superadmin/manage/schools/<id>/teachers/
+        Query params: page, page_size, search
+        """
+        from .services import SuperAdminSchoolService
+        
+        try:
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 20))
+            search = request.query_params.get('search')
+            
+            data = SuperAdminSchoolService.get_school_teachers(pk, page, page_size, search)
+            return Response({
+                'success': True,
+                'data': data
+            })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['get'])
+    def students(self, request, pk=None):
+        """
+        Get paginated students for a school
+        GET /superadmin/manage/schools/<id>/students/
+        Query params: page, page_size, search
+        """
+        from .services import SuperAdminSchoolService
+        
+        try:
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 20))
+            search = request.query_params.get('search')
+            
+            data = SuperAdminSchoolService.get_school_students(pk, page, page_size, search)
+            return Response({
+                'success': True,
+                'data': data
+            })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['get'])
+    def admins(self, request, pk=None):
+        """
+        Get paginated admins for a school
+        GET /superadmin/manage/schools/<id>/admins/
+        Query params: page, page_size, search
+        """
+        from .services import SuperAdminSchoolService
+        
+        try:
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 20))
+            search = request.query_params.get('search')
+            
+            data = SuperAdminSchoolService.get_school_admins(pk, page, page_size, search)
+            return Response({
+                'success': True,
+                'data': data
+            })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['get'])
+    def classes(self, request, pk=None):
+        """
+        Get all classes for a school
+        GET /superadmin/manage/schools/<id>/classes/
+        """
+        from .services import SuperAdminSchoolService
+        
+        try:
+            data = SuperAdminSchoolService.get_school_classes(pk)
+            return Response({
+                'success': True,
+                'data': data
+            })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def destroy(self, request, pk=None):
+        """
+        Delete/deactivate a school
+        DELETE /superadmin/manage/schools/<id>/
+        """
+        from .services import SuperAdminSchoolService
+        
+        try:
+            SuperAdminSchoolService.delete_school(pk)
+            return Response({
+                'success': True,
+                'message': 'School deactivated successfully'
+            })
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SuperAdminAdminViewSet(viewsets.ViewSet):
+    """
+    ViewSet for Super Admin admin management operations
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    
+    def list(self, request):
+        """
+        Get paginated list of all admins
+        GET /superadmin/manage/admins/
+        Query params: page, page_size, school_id, search, status
+        """
+        from .services import SuperAdminService
+        
+        try:
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 20))
+            
+            filters = {
+                'school_id': request.query_params.get('school_id'),
+                'search': request.query_params.get('search'),
+                'status': request.query_params.get('status'),
+            }
+            
+            data = SuperAdminService.get_all_admins(page, page_size, filters)
+            return Response({
+                'success': True,
+                'data': data
+            })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def retrieve(self, request, pk=None):
+        """
+        Get admin details
+        GET /superadmin/manage/admins/<id>/
+        """
+        from .services import SuperAdminService
+        
+        try:
+            data = SuperAdminService.get_admin_detail(pk)
+            if data:
+                return Response({
+                    'success': True,
+                    'data': data
+                })
+            return Response({
+                'success': False,
+                'error': 'Admin not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def create(self, request):
+        """
+        Create a new admin
+        POST /superadmin/manage/admins/
+        """
+        try:
+            data = request.data
+            
+            # Validate input data
+            UserManagementService.validate_admin_creation_data(data)
+            
+            # Create admin user
+            user, admin_profile, schools = UserManagementService.create_admin_user(data)
+            
+            from .services import SuperAdminService
+            admin_data = SuperAdminService._format_admin(admin_profile)
+            
+            return Response({
+                'success': True,
+                'message': 'Admin created successfully',
+                'data': admin_data
+            }, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
+    def toggle_status(self, request, pk=None):
+        """
+        Toggle admin active status
+        POST /superadmin/manage/admins/<id>/toggle_status/
+        Body: { "is_active": true | false }
+        """
+        from .services import SuperAdminService
+        
+        try:
+            is_active = request.data.get('is_active')
+            if is_active is None:
+                return Response({
+                    'success': False,
+                    'error': 'is_active is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            SuperAdminService.update_admin_status(pk, is_active)
+            return Response({
+                'success': True,
+                'message': f'Admin {"activated" if is_active else "deactivated"} successfully'
+            })
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
+    def update_schools(self, request, pk=None):
+        """
+        Update admin's school associations
+        POST /superadmin/manage/admins/<id>/update_schools/
+        Body: { "school_ids": ["uuid1", "uuid2"] }
+        """
+        from .services import SuperAdminService
+        
+        try:
+            school_ids = request.data.get('school_ids', [])
+            if not school_ids:
+                return Response({
+                    'success': False,
+                    'error': 'At least one school_id is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            SuperAdminService.update_admin_schools(pk, school_ids)
+            return Response({
+                'success': True,
+                'message': 'Admin schools updated successfully'
+            })
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def destroy(self, request, pk=None):
+        """
+        Remove/deactivate an admin
+        DELETE /superadmin/manage/admins/<id>/
+        """
+        from .services import SuperAdminService
+        
+        try:
+            SuperAdminService.remove_admin(pk)
+            return Response({
+                'success': True,
+                'message': 'Admin removed successfully'
+            })
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SuperAdminTeacherViewSet(viewsets.ViewSet):
+    """ViewSet for Super Admin teacher management"""
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    
+    def list(self, request):
+        """
+        Get paginated list of all teachers
+        GET /superadmin/manage/teachers/?page=1&page_size=12&search=...&school_id=...&status=...
+        """
+        from .services import SuperAdminTeacherService
+        
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 12))
+        
+        filters = {
+            'search': request.query_params.get('search'),
+            'school_id': request.query_params.get('school_id'),
+            'status': request.query_params.get('status'),
+            'subject': request.query_params.get('subject'),
+        }
+        
+        data = SuperAdminTeacherService.get_all_teachers(page, page_size, filters)
+        return Response(data)
+    
+    def retrieve(self, request, pk=None):
+        """
+        Get detailed teacher information
+        GET /superadmin/manage/teachers/<id>/
+        """
+        from .services import SuperAdminTeacherService
+        
+        try:
+            data = SuperAdminTeacherService.get_teacher_detail(pk)
+            return Response(data)
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=True, methods=['post'])
+    def toggle_status(self, request, pk=None):
+        """
+        Toggle teacher active status
+        POST /superadmin/manage/teachers/<id>/toggle_status/
+        Body: { "is_active": true/false }
+        """
+        from .services import SuperAdminTeacherService
+        
+        try:
+            is_active = request.data.get('is_active', True)
+            SuperAdminTeacherService.toggle_teacher_status(pk, is_active)
+            return Response({
+                'success': True,
+                'message': f'Teacher {"activated" if is_active else "deactivated"} successfully'
+            })
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SuperAdminStudentViewSet(viewsets.ViewSet):
+    """ViewSet for Super Admin student management"""
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    
+    def list(self, request):
+        """
+        Get paginated list of all students
+        GET /superadmin/manage/students/?page=1&page_size=12&search=...&school_id=...&status=...
+        """
+        from .services import SuperAdminStudentService
+        
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 12))
+        
+        filters = {
+            'search': request.query_params.get('search'),
+            'school_id': request.query_params.get('school_id'),
+            'class_id': request.query_params.get('class_id'),
+            'status': request.query_params.get('status'),
+        }
+        
+        data = SuperAdminStudentService.get_all_students(page, page_size, filters)
+        return Response(data)
+    
+    def retrieve(self, request, pk=None):
+        """
+        Get detailed student information
+        GET /superadmin/manage/students/<id>/
+        """
+        from .services import SuperAdminStudentService
+        
+        try:
+            data = SuperAdminStudentService.get_student_detail(pk)
+            return Response(data)
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=True, methods=['post'])
+    def toggle_status(self, request, pk=None):
+        """
+        Toggle student active status
+        POST /superadmin/manage/students/<id>/toggle_status/
+        Body: { "is_active": true/false }
+        """
+        from .services import SuperAdminStudentService
+        
+        try:
+            is_active = request.data.get('is_active', True)
+            SuperAdminStudentService.toggle_student_status(pk, is_active)
+            return Response({
+                'success': True,
+                'message': f'Student {"activated" if is_active else "deactivated"} successfully'
+            })
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SuperAdminAnnouncementViewSet(viewsets.ViewSet):
+    """ViewSet for Super Admin announcement management"""
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    
+    def list(self, request):
+        """Get paginated list of announcements for the requesting user"""
+        from .services import SuperAdminAnnouncementService
+        
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 12))
+        
+        filters = {
+            'search': request.query_params.get('search'),
+            'status': request.query_params.get('status'),
+            'priority': request.query_params.get('priority'),
+        }
+        
+        # Pass the requesting user to filter announcements
+        data = SuperAdminAnnouncementService.get_all_announcements(page, page_size, filters, user=request.user)
+        return Response(data)
+    
+    def retrieve(self, request, pk=None):
+        """Get detailed announcement information"""
+        from .services import SuperAdminAnnouncementService
+        
+        try:
+            data = SuperAdminAnnouncementService.get_announcement_detail(pk)
+            return Response(data)
+        except ValidationError as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+    
+    def create(self, request):
+        """Create a new announcement"""
+        from .services import SuperAdminAnnouncementService
+        
+        try:
+            data = SuperAdminAnnouncementService.create_announcement(request.data, request.user)
+            return Response({'success': True, 'announcement': data}, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'])
+    def publish(self, request, pk=None):
+        """Publish an announcement"""
+        from .services import SuperAdminAnnouncementService
+        
+        try:
+            data = SuperAdminAnnouncementService.publish_announcement(pk)
+            return Response({'success': True, 'announcement': data})
+        except ValidationError as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        """Archive an announcement"""
+        from .services import SuperAdminAnnouncementService
+        
+        try:
+            data = SuperAdminAnnouncementService.archive_announcement(pk)
+            return Response({'success': True, 'announcement': data})
+        except ValidationError as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def destroy(self, request, pk=None):
+        """Delete an announcement"""
+        from .services import SuperAdminAnnouncementService
+        
+        try:
+            SuperAdminAnnouncementService.delete_announcement(pk)
+            return Response({'success': True, 'message': 'Announcement deleted successfully'})
+        except ValidationError as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SuperAdminTaskViewSet(viewsets.ViewSet):
+    """ViewSet for Super Admin task management (tasks for admins only)"""
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    
+    def list(self, request):
+        """Get paginated list of all admin tasks"""
+        from .services import SuperAdminTaskService
+        
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 12))
+        
+        filters = {
+            'search': request.query_params.get('search'),
+            'status': request.query_params.get('status'),
+            'priority': request.query_params.get('priority'),
+            'assigned_to': request.query_params.get('assigned_to'),
+            'school_id': request.query_params.get('school_id'),
+        }
+        
+        data = SuperAdminTaskService.get_all_tasks(page, page_size, filters)
+        return Response(data)
+    
+    def retrieve(self, request, pk=None):
+        """Get detailed task information with replies"""
+        from .services import SuperAdminTaskService
+        
+        try:
+            data = SuperAdminTaskService.get_task_detail(pk)
+            return Response(data)
+        except ValidationError as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+    
+    def create(self, request):
+        """Create a new admin task"""
+        from .services import SuperAdminTaskService
+        
+        try:
+            data = SuperAdminTaskService.create_task(request.data, request.user)
+            return Response({'success': True, 'task': data}, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'])
+    def update_status(self, request, pk=None):
+        """Update task status"""
+        from .services import SuperAdminTaskService
+        
+        try:
+            status_value = request.data.get('status')
+            if not status_value:
+                return Response({'success': False, 'error': 'Status is required'}, status=status.HTTP_400_BAD_REQUEST)
+            data = SuperAdminTaskService.update_task_status(pk, status_value)
+            return Response({'success': True, 'task': data})
+        except ValidationError as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'])
+    def add_reply(self, request, pk=None):
+        """Add a reply to a task"""
+        from .services import SuperAdminTaskService
+        
+        try:
+            message = request.data.get('message')
+            if not message:
+                return Response({'success': False, 'error': 'Message is required'}, status=status.HTTP_400_BAD_REQUEST)
+            data = SuperAdminTaskService.add_task_reply(pk, message, request.user)
+            return Response({'success': True, 'reply': data})
+        except ValidationError as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def destroy(self, request, pk=None):
+        """Delete a task"""
+        from .services import SuperAdminTaskService
+        
+        try:
+            SuperAdminTaskService.delete_task(pk)
+            return Response({'success': True, 'message': 'Task deleted successfully'})
+        except ValidationError as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

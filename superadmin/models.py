@@ -914,3 +914,109 @@ class GovernmentScheme(models.Model):
         self.status = 'PUBLISHED'
         self.published_at = timezone.now()
         self.save()
+
+
+class AdminTask(models.Model):
+    """
+    Tasks assigned by Super Admin to Admins only
+    """
+    
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+    
+    PRIORITY_CHOICES = [
+        ('LOW', 'Low'),
+        ('MEDIUM', 'Medium'),
+        ('HIGH', 'High'),
+        ('URGENT', 'Urgent'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Task content
+    title = models.CharField(max_length=255)
+    description = models.TextField(default='')
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='MEDIUM')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    
+    # Assigned to (Admin only)
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='assigned_admin_tasks'
+    )
+    
+    # Optionally assign to a specific school context
+    school = models.ForeignKey(
+        School,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='admin_tasks'
+    )
+    
+    # Created by (Super Admin)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_admin_tasks'
+    )
+    
+    # Dates
+    due_date = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'admin_tasks'
+        verbose_name = 'Admin Task'
+        verbose_name_plural = 'Admin Tasks'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'priority']),
+            models.Index(fields=['assigned_to', 'status']),
+            models.Index(fields=['due_date']),
+        ]
+    
+    def __str__(self):
+        return f"{self.title} - {self.assigned_to}"
+
+
+class AdminTaskReply(models.Model):
+    """
+    Replies/Updates on Admin Tasks
+    """
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    task = models.ForeignKey(
+        AdminTask,
+        on_delete=models.CASCADE,
+        related_name='replies'
+    )
+    
+    message = models.TextField()
+    
+    replied_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='admin_task_replies'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'admin_task_replies'
+        verbose_name = 'Admin Task Reply'
+        verbose_name_plural = 'Admin Task Replies'
+        ordering = ['created_at']
