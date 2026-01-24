@@ -21,8 +21,11 @@ DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
 # Allowed hosts configuration
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
-if os.getenv('RAILWAY_ENVIRONMENT'):
-    ALLOWED_HOSTS.extend(['.railway.app', '.up.railway.app'])
+# Add Railway domains
+ALLOWED_HOSTS.extend(['.railway.app', '.up.railway.app'])
+# In production, allow all hosts if not explicitly set
+if not DEBUG:
+    ALLOWED_HOSTS.append('*')
 
 # Application definition
 INSTALLED_APPS = [
