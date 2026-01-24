@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BookOpen, User, Mail, Phone, Calendar, MapPin, Lock } from 'lucide-react';
+import { BookOpen, User, Mail, MapPin, Lock } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import authService from '@/services/auth.service';
 

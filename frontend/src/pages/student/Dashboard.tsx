@@ -46,7 +46,6 @@ import studentDashboardService, {
   StudentReport,
   StudentReportDetail,
   StudentAnnouncement,
-  StudentAnnouncementsResponse,
 } from '../../services/studentDashboard.service';
 import NewsSection from '../../components/shared/NewsSection';
 
@@ -568,21 +567,6 @@ function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string;
         <p className="text-xs text-gray-500">{label}</p>
         <p className="text-sm font-medium text-gray-900">{value}</p>
       </div>
-    </div>
-  );
-}
-
-function PlaceholderSection({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-      <div className="w-20 h-20 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
-        <BookOpen className="w-10 h-10 text-gray-400" />
-      </div>
-      <h2 className="text-xl font-bold text-gray-900 mb-2">{title}</h2>
-      <p className="text-gray-500 mb-4">{description}</p>
-      <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">
-        Coming Soon
-      </span>
     </div>
   );
 }

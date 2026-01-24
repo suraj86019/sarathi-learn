@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { 
   BookOpen, 
   Users, 
-  Award, 
   Sparkles,
   Calendar,
   BarChart3,
