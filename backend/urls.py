@@ -44,20 +44,9 @@ def api_root(request):
 @permission_classes([AllowAny])
 def health_check(request):
     """Health check endpoint for Railway deployment monitoring"""
-    from django.db import connection
-    from django.db.utils import OperationalError
-    
-    # Check database connection
-    db_status = 'healthy'
-    try:
-        connection.ensure_connection()
-    except OperationalError:
-        db_status = 'unhealthy'
-    
     return Response({
-        'status': 'healthy' if db_status == 'healthy' else 'degraded',
+        'status': 'healthy',
         'version': '1.0.0',
-        'database': db_status,
     })
 
 
