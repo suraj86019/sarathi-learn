@@ -85,12 +85,29 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 # Database
 # Use DATABASE_URL from environment if available (for Railway/production)
-DATABASE_URL = os.getenv('DATABASE_URL')
+# Railway may use different variable names
+DATABASE_URL = (
+    os.getenv('DATABASE_URL') or 
+    os.getenv('DATABASE_PUBLIC_URL') or 
+    os.getenv('POSTGRES_URL') or
+    os.getenv('POSTGRESQL_URL')
+)
+
 if DATABASE_URL:
+    # For psycopg3, we need to replace postgres:// with postgresql://
+    if DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    
     DATABASES = {
-        'default': dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
+        'default': dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
     }
+    print(f"[Settings] Using PostgreSQL database")
 else:
+    print(f"[Settings] WARNING: No DATABASE_URL found, using SQLite")
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
