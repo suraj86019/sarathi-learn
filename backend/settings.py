@@ -85,8 +85,10 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 # Database
 # Use DATABASE_URL from environment if available (for Railway/production)
-# Railway may use different variable names
+# Railway provides DATABASE_PRIVATE_URL for internal networking (preferred)
+# and DATABASE_PUBLIC_URL for external access
 DATABASE_URL = (
+    os.getenv('DATABASE_PRIVATE_URL') or  # Internal Railway networking (fastest)
     os.getenv('DATABASE_URL') or 
     os.getenv('DATABASE_PUBLIC_URL') or 
     os.getenv('POSTGRES_URL') or
@@ -98,6 +100,14 @@ if DATABASE_URL:
     if DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     
+    # Print the host being used (hide password)
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(DATABASE_URL)
+        print(f"[Settings] Using PostgreSQL: {parsed.hostname}:{parsed.port}")
+    except:
+        print(f"[Settings] Using PostgreSQL database")
+    
     DATABASES = {
         'default': dj_database_url.config(
             default=DATABASE_URL,
@@ -105,7 +115,6 @@ if DATABASE_URL:
             conn_health_checks=True,
         )
     }
-    print(f"[Settings] Using PostgreSQL database")
 else:
     print(f"[Settings] WARNING: No DATABASE_URL found, using SQLite")
     DATABASES = {
