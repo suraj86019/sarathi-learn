@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+
+# Database
+db.sqlite3
+db.sqlite3-journal
+*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.next/
+
+# Logs
+*.log
+logs/
+
+# Temp
+tmp/
+temp/
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Documentation
+*.md
+!README.md
+
+# Tests
+htmlcov/
+.coverage
+.pytest_cache/
