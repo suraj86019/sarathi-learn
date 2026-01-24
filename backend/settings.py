@@ -85,14 +85,13 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 # Database
 # Use DATABASE_URL from environment if available (for Railway/production)
-# Railway provides DATABASE_PRIVATE_URL for internal networking (preferred)
-# and DATABASE_PUBLIC_URL for external access
+# Use PUBLIC URL first as internal networking may not always work
 DATABASE_URL = (
-    os.getenv('DATABASE_PRIVATE_URL') or  # Internal Railway networking (fastest)
+    os.getenv('DATABASE_PUBLIC_URL') or  # Railway public proxy (most reliable)
     os.getenv('DATABASE_URL') or 
-    os.getenv('DATABASE_PUBLIC_URL') or 
     os.getenv('POSTGRES_URL') or
-    os.getenv('POSTGRESQL_URL')
+    os.getenv('POSTGRESQL_URL') or
+    os.getenv('DATABASE_PRIVATE_URL')  # Internal last (may not resolve)
 )
 
 if DATABASE_URL:
