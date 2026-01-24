@@ -3873,7 +3873,7 @@ function ScheduleSection() {
                             <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusBadge(activity.status)}`}>
                               {activity.status}
                             </span>
-                          </div>
+      </div>
                           <p className="text-sm text-gray-600 line-clamp-2">{activity.description}</p>
                           <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                             {activity.subject && <span>📚 {activity.subject.name}</span>}

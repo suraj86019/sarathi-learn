@@ -959,11 +959,11 @@ function StudentsSection() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <div>
+            <div>
           <h2 className="text-2xl font-bold text-gray-900">Students Management</h2>
           <p className="text-gray-500">View and manage all students across schools</p>
-                </div>
-              </div>
+            </div>
+          </div>
 
       {/* Filters */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
@@ -1004,20 +1004,20 @@ function StudentsSection() {
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </select>
-          <button
+                  <button
             onClick={handleSearch}
             className="px-6 py-2.5 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors"
           >
             Search
-          </button>
+                  </button>
         </div>
-      </div>
+              </div>
 
       {/* Students Grid */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
-        </div>
+              </div>
       ) : students.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {students.map((student) => (
@@ -1029,21 +1029,21 @@ function StudentsSection() {
                 <div className="flex items-start gap-3 mb-3">
                   <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">
                     {student.first_name?.charAt(0)}{student.last_name?.charAt(0)}
-                          </div>
+            </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-gray-900 truncate">{student.full_name}</h3>
                     <p className="text-xs text-gray-500">Roll: {student.roll_no || 'N/A'}</p>
-                  </div>
+          </div>
                   <span className={`px-2 py-1 text-xs font-medium rounded-full ${student.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                     {student.is_active ? 'Active' : 'Inactive'}
                           </span>
-                        </div>
+        </div>
 
                         <div className="space-y-2 mb-4">
                           <div className="flex items-center text-sm text-gray-600">
                     <Mail className="w-4 h-4 mr-2 text-orange-500 flex-shrink-0" />
                     <span className="truncate">{student.email}</span>
-                          </div>
+            </div>
                   {student.phone && (
                           <div className="flex items-center text-sm text-gray-600">
                       <Phone className="w-4 h-4 mr-2 text-orange-500 flex-shrink-0" />
@@ -1075,14 +1075,14 @@ function StudentsSection() {
                 )}
 
                 <div className="flex gap-2">
-                  <button
+              <button
                     onClick={() => handleViewStudent(student.id)}
                     className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
-                  >
+              >
                     <Eye className="w-4 h-4" />
                     <span className="hidden sm:inline">View</span>
-                          </button>
-                  <button
+              </button>
+              <button
                     onClick={() => handleToggleStatus(student.id, student.is_active)}
                     className={`flex items-center justify-center gap-1 px-3 py-2 rounded-lg transition-colors text-sm ${
                       student.is_active
@@ -1091,12 +1091,12 @@ function StudentsSection() {
                     }`}
                   >
                     {student.is_active ? <PauseCircle className="w-4 h-4" /> : <PlayCircle className="w-4 h-4" />}
-                          </button>
-                </div>
-                        </div>
-                      </div>
-                    ))}
+              </button>
+            </div>
+          </div>
                   </div>
+                    ))}
+                </div>
       ) : (
         <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
           <Users className="w-16 h-16 text-gray-200 mx-auto mb-4" />
@@ -1125,7 +1125,7 @@ function StudentsSection() {
           >
             <ChevronRight className="w-4 h-4" />
                                   </button>
-        </div>
+                  </div>
       )}
 
       {/* Student Detail Modal */}
@@ -1139,7 +1139,7 @@ function StudentsSection() {
           onToggleStatus={handleToggleStatus}
         />
       )}
-                                </div>
+                </div>
                               );
 }
 
@@ -1157,7 +1157,7 @@ function StudentDetailModal({ student, onClose, onToggleStatus }: {
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center text-white font-bold text-2xl">
                 {student.first_name?.charAt(0)}{student.last_name?.charAt(0)}
-              </div>
+                  </div>
               <div>
                 <h2 className="text-xl font-bold text-white">{student.full_name}</h2>
                 <p className="text-orange-100">Roll No: {student.roll_no || 'N/A'}</p>
@@ -1175,8 +1175,8 @@ function StudentDetailModal({ student, onClose, onToggleStatus }: {
                     </span>
                   )}
                 </div>
-              </div>
-            </div>
+                  </div>
+                </div>
             <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
               <X className="w-5 h-5 text-white" />
             </button>
@@ -1208,7 +1208,7 @@ function StudentDetailModal({ student, onClose, onToggleStatus }: {
                                 </div>
                               </div>
             </div>
-          </div>
+                </div>
 
           {/* School & Class */}
           <div>
@@ -1218,22 +1218,22 @@ function StudentDetailModal({ student, onClose, onToggleStatus }: {
                 <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
                   <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
                     <SchoolIcon className="w-5 h-5 text-orange-600" />
-                  </div>
+                    </div>
                   <div>
                     <p className="text-xs text-gray-500">School</p>
                     <p className="text-sm font-medium">{student.school.name}</p>
-                  </div>
-                </div>
+                    </div>
+                    </div>
               )}
               <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
                 <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
                   <Users className="w-5 h-5 text-orange-600" />
-                </div>
+                    </div>
                 <div>
                   <p className="text-xs text-gray-500">Class & Section</p>
                   <p className="text-sm font-medium">{student.class_name || 'N/A'}{student.section ? ` - ${student.section}` : ''}</p>
+                  </div>
                 </div>
-              </div>
               <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
                 <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
                   <Calendar className="w-5 h-5 text-orange-600" />
@@ -1265,12 +1265,12 @@ function StudentDetailModal({ student, onClose, onToggleStatus }: {
                 <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-xl">
                   <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
                     <Users className="w-5 h-5 text-amber-600" />
-                      </div>
+                </div>
                   <div>
                     <p className="text-xs text-gray-500">Parent Name</p>
                     <p className="text-sm font-medium">{student.parent_name}</p>
-                  </div>
-                </div>
+                      </div>
+                      </div>
                 {student.parent_phone && (
                   <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-xl">
                     <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
@@ -1279,7 +1279,7 @@ function StudentDetailModal({ student, onClose, onToggleStatus }: {
                     <div>
                       <p className="text-xs text-gray-500">Parent Phone</p>
                       <p className="text-sm font-medium">{student.parent_phone}</p>
-                    </div>
+                </div>
                   </div>
                 )}
                 {student.parent_email && (
@@ -1328,15 +1328,15 @@ function StudentDetailModal({ student, onClose, onToggleStatus }: {
             >
               {student.is_active ? <PauseCircle className="w-5 h-5" /> : <PlayCircle className="w-5 h-5" />}
               {student.is_active ? 'Deactivate Student' : 'Activate Student'}
-                      </button>
+                  </button>
                   <button
               onClick={onClose}
               className="flex-1 py-3 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors font-medium"
                   >
               Close
                   </button>
-          </div>
-        </div>
+                </div>
+              </div>
       </div>
     </div>
   );
@@ -1478,8 +1478,8 @@ function AnnouncementsSection() {
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
+                  <input
+                    type="text"
               placeholder="Search announcements..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -1506,14 +1506,14 @@ function AnnouncementsSection() {
           >
             Search
           </button>
-        </div>
-      </div>
+                </div>
+              </div>
 
       {/* Announcements Grid */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-        </div>
+                            </div>
       ) : announcements.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {announcements.map((announcement) => (
@@ -1527,8 +1527,8 @@ function AnnouncementsSection() {
                   <div className="flex gap-1">
                     <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getPriorityColor(announcement.priority)}`}>
                       {announcement.priority}
-                    </span>
-                  </div>
+                            </span>
+                            </div>
                 </div>
                 
                 <p className="text-sm text-gray-600 line-clamp-2 mb-3">{announcement.content || 'No content'}</p>
@@ -1536,7 +1536,7 @@ function AnnouncementsSection() {
                 <div className="flex items-center justify-between mb-3">
                   <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(announcement.status)}`}>
                     {announcement.status}
-                  </span>
+                            </span>
                   <span className="text-xs text-gray-500">
                     {new Date(announcement.created_at).toLocaleDateString()}
                   </span>
@@ -1556,26 +1556,26 @@ function AnnouncementsSection() {
                   >
                     <Eye className="w-4 h-4" />
                     View
-                  </button>
+                                </button>
                   {announcement.status === 'DRAFT' && (
                     <button
                       onClick={() => handlePublish(announcement.id)}
                       className="flex items-center justify-center gap-1 px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm"
                     >
                       <PlayCircle className="w-4 h-4" />
-                    </button>
-                  )}
+                                </button>
+                              )}
                   <button
                     onClick={() => handleDelete(announcement.id)}
                     className="flex items-center justify-center px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-sm"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                              </button>
+                            </div>
               </div>
             </div>
-          ))}
-        </div>
+                      ))}
+                </div>
       ) : (
         <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
           <Bell className="w-16 h-16 text-gray-200 mx-auto mb-4" />
@@ -1587,7 +1587,7 @@ function AnnouncementsSection() {
           >
             Create Announcement
           </button>
-        </div>
+              </div>
       )}
 
       {/* Pagination */}
@@ -1610,7 +1610,7 @@ function AnnouncementsSection() {
           >
             <ChevronRight className="w-4 h-4" />
           </button>
-        </div>
+                </div>
       )}
 
       {/* Create Modal */}
@@ -1688,9 +1688,9 @@ function CreateAnnouncementModal({ schools, onClose, onSuccess }: {
             <h2 className="text-xl font-bold text-gray-900">Create Announcement</h2>
             <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
               <X className="w-5 h-5 text-gray-500" />
-            </button>
+                </button>
           </div>
-        </div>
+              </div>
 
         <form onSubmit={(e) => handleSubmit(e, false)} className="p-6 space-y-4">
           <div>
@@ -1729,7 +1729,7 @@ function CreateAnnouncementModal({ schools, onClose, onSuccess }: {
                 <option value="URGENT">Urgent</option>
               </select>
             </div>
-            <div>
+                          <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Target School</label>
               <select
                 value={targetSchoolId}
@@ -1741,8 +1741,8 @@ function CreateAnnouncementModal({ schools, onClose, onSuccess }: {
                   <option key={school.id} value={school.id}>{school.name}</option>
                 ))}
               </select>
-            </div>
-          </div>
+                          </div>
+                        </div>
 
           <div className="flex gap-3 pt-4">
             <button
@@ -1769,9 +1769,9 @@ function CreateAnnouncementModal({ schools, onClose, onSuccess }: {
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               Publish
             </button>
-          </div>
+                          </div>
         </form>
-      </div>
+                          </div>
     </div>
   );
 }
@@ -1802,27 +1802,27 @@ function AnnouncementDetailModal({ announcement, onClose, onPublish, onArchive, 
             <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
               <X className="w-5 h-5 text-white" />
             </button>
-          </div>
-        </div>
+                          </div>
+                        </div>
 
         <div className="p-6 space-y-4">
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Content</h3>
             <p className="text-gray-700 whitespace-pre-wrap">{announcement.content || 'No content'}</p>
-          </div>
+                          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="p-3 bg-gray-50 rounded-lg">
               <p className="text-xs text-gray-500">Created</p>
               <p className="text-sm font-medium">{new Date(announcement.created_at).toLocaleDateString()}</p>
-            </div>
+                          </div>
             {announcement.published_at && (
               <div className="p-3 bg-gray-50 rounded-lg">
                 <p className="text-xs text-gray-500">Published</p>
                 <p className="text-sm font-medium">{new Date(announcement.published_at).toLocaleDateString()}</p>
-              </div>
+                          </div>
             )}
-          </div>
+                        </div>
 
           {announcement.targets && announcement.targets.length > 0 && (
             <div>
@@ -1847,7 +1847,7 @@ function AnnouncementDetailModal({ announcement, onClose, onPublish, onArchive, 
               >
                 <PlayCircle className="w-4 h-4" />
                 Publish
-              </button>
+                          </button>
             )}
             {announcement.status === 'PUBLISHED' && (
               <button
@@ -1855,7 +1855,7 @@ function AnnouncementDetailModal({ announcement, onClose, onPublish, onArchive, 
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-colors"
               >
                 Archive
-              </button>
+                          </button>
             )}
             <button
               onClick={() => onDelete(announcement.id)}
@@ -1869,11 +1869,11 @@ function AnnouncementDetailModal({ announcement, onClose, onPublish, onArchive, 
               className="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors"
             >
               Close
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+                          </button>
+                        </div>
+                      </div>
+                  </div>
+                </div>
   );
 }
 
@@ -1996,22 +1996,22 @@ function AdminTasksSection() {
     }
   };
 
-  return (
+                              return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
+                                  <div>
           <h2 className="text-2xl font-bold text-gray-900">Admin Tasks</h2>
           <p className="text-gray-500">Assign and manage tasks for administrators</p>
-        </div>
-        <button
+                                  </div>
+                                  <button
           onClick={() => setShowCreateModal(true)}
           className="flex items-center gap-2 px-4 py-2.5 bg-rose-600 text-white rounded-xl hover:bg-rose-700 transition-colors font-medium"
         >
           <Plus className="w-5 h-5" />
           <span>Create Task</span>
-        </button>
-      </div>
+                                  </button>
+                                </div>
 
       {/* Filters */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
@@ -2047,8 +2047,8 @@ function AdminTasksSection() {
           >
             Search
           </button>
-        </div>
-      </div>
+                        </div>
+                      </div>
 
       {/* Tasks Grid */}
       {loading ? (
@@ -2068,7 +2068,7 @@ function AdminTasksSection() {
                   <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(task.status)}`}>
                     {task.status.replace('_', ' ')}
                   </span>
-                </div>
+                                </div>
                 
                 <p className="text-sm text-gray-600 line-clamp-2 mb-3">{task.description || 'No description'}</p>
                 
@@ -2094,13 +2094,13 @@ function AdminTasksSection() {
                 </div>
 
                 <div className="flex gap-2">
-                  <button
+                                <button
                     onClick={() => handleViewTask(task.id)}
                     className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors text-sm"
                   >
                     <Eye className="w-4 h-4" />
                     View
-                  </button>
+                                </button>
                   {task.status === 'PENDING' && (
                     <button
                       onClick={() => handleUpdateStatus(task.id, 'IN_PROGRESS')}
@@ -2119,9 +2119,9 @@ function AdminTasksSection() {
                   )}
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+                              </div>
+                            ))}
+                        </div>
       ) : (
         <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
           <Award className="w-16 h-16 text-gray-200 mx-auto mb-4" />
@@ -2133,13 +2133,13 @@ function AdminTasksSection() {
           >
             Create Task
           </button>
-        </div>
+                      </div>
       )}
 
       {/* Pagination */}
       {pagination && pagination.total_pages > 1 && (
         <div className="flex items-center justify-center gap-2 pt-4">
-          <button
+                        <button
             onClick={() => setPage(Math.max(1, page - 1))}
             disabled={!pagination.has_previous}
             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200"
@@ -2329,8 +2329,8 @@ function CreateAdminTaskModal({ admins, schools, onClose, onSuccess }: {
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               Create Task
-            </button>
-          </div>
+                        </button>
+                      </div>
         </form>
       </div>
     </div>
@@ -2403,14 +2403,14 @@ function AdminTaskDetailModal({ task, onClose, onUpdateStatus, onDelete, onReply
               <div className="p-3 bg-gray-50 rounded-lg">
                 <p className="text-xs text-gray-500">Related School</p>
                 <p className="text-sm font-medium">{task.school.name}</p>
-              </div>
+                </div>
             )}
             {task.due_date && (
               <div className="p-3 bg-gray-50 rounded-lg">
                 <p className="text-xs text-gray-500">Due Date</p>
                 <p className="text-sm font-medium">{new Date(task.due_date).toLocaleDateString()}</p>
               </div>
-            )}
+          )}
             <div className="p-3 bg-gray-50 rounded-lg">
               <p className="text-xs text-gray-500">Created</p>
               <p className="text-sm font-medium">{new Date(task.created_at).toLocaleDateString()}</p>
@@ -2418,7 +2418,7 @@ function AdminTaskDetailModal({ task, onClose, onUpdateStatus, onDelete, onReply
           </div>
 
           {/* Replies/Conversation */}
-          <div>
+                <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Conversation</h3>
             <div className="border border-gray-200 rounded-xl max-h-48 overflow-y-auto">
               {task.replies && task.replies.length > 0 ? (
@@ -2428,7 +2428,7 @@ function AdminTaskDetailModal({ task, onClose, onUpdateStatus, onDelete, onReply
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium text-gray-900">{reply.replied_by?.name || 'Unknown'}</span>
                         <span className="text-xs text-gray-500">{new Date(reply.created_at).toLocaleString()}</span>
-                      </div>
+                </div>
                       <p className="text-sm text-gray-700">{reply.message}</p>
                     </div>
                   ))}
@@ -2446,7 +2446,7 @@ function AdminTaskDetailModal({ task, onClose, onUpdateStatus, onDelete, onReply
                 className="flex-1 px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500"
                 onKeyDown={(e) => e.key === 'Enter' && handleSendReply()}
               />
-              <button
+                      <button
                 onClick={handleSendReply}
                 disabled={sendingReply || !replyMessage.trim()}
                 className="px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 disabled:opacity-50 transition-colors"
@@ -2480,27 +2480,27 @@ function AdminTaskDetailModal({ task, onClose, onUpdateStatus, onDelete, onReply
                   }`}
                 >
                   {status.replace('_', ' ')}
-                </button>
-              ))}
-            </div>
+                      </button>
+                    ))}
+                  </div>
           </div>
           
           <div className="flex flex-wrap gap-2">
-            <button
+                  <button
               onClick={() => onDelete(task.id)}
               className="flex items-center justify-center gap-2 px-4 py-2.5 bg-red-100 text-red-700 rounded-xl hover:bg-red-200 transition-colors"
-            >
+                  >
               <Trash2 className="w-4 h-4" />
               Delete Task
-            </button>
-            <button
+                  </button>
+                  <button
               onClick={onClose}
               className="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors"
-            >
+                  >
               Close
-            </button>
-          </div>
-        </div>
+                  </button>
+                </div>
+              </div>
       </div>
     </div>
   );
@@ -2589,10 +2589,10 @@ function SchoolsSection() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <div>
+                      <div>
           <h2 className="text-2xl font-bold text-gray-900">Schools Management</h2>
           <p className="text-gray-500">Manage all registered schools</p>
-                </div>
+                      </div>
                   <button
           onClick={() => setShowCreateModal(true)}
           className="flex items-center gap-2 px-4 py-2.5 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors font-medium"
@@ -2600,7 +2600,7 @@ function SchoolsSection() {
           <Plus className="w-5 h-5" />
           <span>Add School</span>
                   </button>
-              </div>
+                    </div>
 
       {/* Filters */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
@@ -2615,7 +2615,7 @@ function SchoolsSection() {
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500"
                   />
-                      </div>
+                  </div>
           <select
             value={statusFilter}
             onChange={(e) => {
