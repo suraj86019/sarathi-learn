@@ -85,35 +85,31 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 # Database
 # Use DATABASE_URL from environment if available (for Railway/production)
-# IMPORTANT: Railway internal URLs (*.railway.internal) don't always resolve
-# so we need to use the public proxy URL
-def get_working_database_url():
-    """Get a database URL that will actually work (avoid internal URLs)"""
-    candidates = [
-        os.getenv('DATABASE_PUBLIC_URL'),
-        os.getenv('DATABASE_URL'),
-        os.getenv('POSTGRES_URL'),
-        os.getenv('POSTGRESQL_URL'),
-    ]
-    
-    for url in candidates:
-        if url:
-            # Skip internal Railway URLs that don't resolve
-            if 'railway.internal' in url:
-                print(f"[Settings] Skipping internal URL (won't resolve)")
-                continue
-            return url
-    
-    return None
+# Debug: Print available database-related environment variables
+print("[Settings] Checking database configuration...")
+for key in sorted(os.environ.keys()):
+    if 'DATABASE' in key or 'POSTGRES' in key or 'PG' in key:
+        val = os.environ[key]
+        # Hide password in output
+        if '@' in val:
+            val = val.split('@')[0][:20] + '...@' + val.split('@')[1] if '@' in val else val[:30] + '...'
+        print(f"[Settings] Found env: {key}={val}")
 
-DATABASE_URL = get_working_database_url()
+# Get database URL - prefer public URL that uses Railway's proxy
+DATABASE_URL = os.getenv('DATABASE_PUBLIC_URL') or os.getenv('DATABASE_URL')
+
+# Skip internal URLs that don't resolve
+if DATABASE_URL and 'railway.internal' in DATABASE_URL:
+    print(f"[Settings] ERROR: Internal URL detected - this won't work!")
+    print(f"[Settings] Please add DATABASE_PUBLIC_URL with the proxy URL")
+    DATABASE_URL = None
 
 if DATABASE_URL:
     # For psycopg3, we need to replace postgres:// with postgresql://
     if DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     
-    # Print the host being used (hide password)
+    # Print the host being used
     try:
         from urllib.parse import urlparse
         parsed = urlparse(DATABASE_URL)
@@ -129,7 +125,13 @@ if DATABASE_URL:
         )
     }
 else:
-    print(f"[Settings] WARNING: No DATABASE_URL found, using SQLite")
+    # In Railway environment, fail if no database URL
+    if os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_SERVICE_NAME'):
+        print("[Settings] FATAL: Running on Railway but no valid DATABASE_URL found!")
+        print("[Settings] Please add DATABASE_PUBLIC_URL variable in Railway")
+        raise Exception("DATABASE_PUBLIC_URL required for Railway deployment")
+    
+    print(f"[Settings] Using SQLite (local development)")
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
