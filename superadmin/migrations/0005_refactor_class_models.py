@@ -1,8 +1,46 @@
-# Generated manually - Refactor Class models
+# Generated manually - Refactor Class models (PostgreSQL compatible)
 
-from django.db import migrations, models
+from django.db import migrations, models, connection
 import django.db.models.deletion
 import uuid
+from django.utils import timezone
+
+
+def create_default_classes(apps, schema_editor):
+    """Create default classes 1-12 using ORM (database agnostic)"""
+    Class = apps.get_model('superadmin', 'Class')
+    
+    default_classes = [
+        {'grade_number': 1, 'name': 'Class 1', 'description': 'First Grade'},
+        {'grade_number': 2, 'name': 'Class 2', 'description': 'Second Grade'},
+        {'grade_number': 3, 'name': 'Class 3', 'description': 'Third Grade'},
+        {'grade_number': 4, 'name': 'Class 4', 'description': 'Fourth Grade'},
+        {'grade_number': 5, 'name': 'Class 5', 'description': 'Fifth Grade'},
+        {'grade_number': 6, 'name': 'Class 6', 'description': 'Sixth Grade'},
+        {'grade_number': 7, 'name': 'Class 7', 'description': 'Seventh Grade'},
+        {'grade_number': 8, 'name': 'Class 8', 'description': 'Eighth Grade'},
+        {'grade_number': 9, 'name': 'Class 9', 'description': 'Ninth Grade'},
+        {'grade_number': 10, 'name': 'Class 10', 'description': 'Tenth Grade'},
+        {'grade_number': 11, 'name': 'Class 11', 'description': 'Eleventh Grade'},
+        {'grade_number': 12, 'name': 'Class 12', 'description': 'Twelfth Grade'},
+    ]
+    
+    for cls_data in default_classes:
+        Class.objects.get_or_create(
+            grade_number=cls_data['grade_number'],
+            defaults={
+                'id': uuid.uuid4().hex,
+                'name': cls_data['name'],
+                'description': cls_data['description'],
+                'is_active': True,
+            }
+        )
+
+
+def reverse_create_default_classes(apps, schema_editor):
+    """Remove default classes"""
+    Class = apps.get_model('superadmin', 'Class')
+    Class.objects.filter(grade_number__gte=1, grade_number__lte=12).delete()
 
 
 class Migration(migrations.Migration):
@@ -13,80 +51,58 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # Step 1: Rename old classes table to keep data
-        migrations.RunSQL(
-            sql="ALTER TABLE classes RENAME TO school_classes_old;",
-            reverse_sql="ALTER TABLE school_classes_old RENAME TO classes;",
+        # Create the Class model (template for grades)
+        migrations.CreateModel(
+            name='Class',
+            fields=[
+                ('id', models.CharField(default=uuid.uuid4, max_length=32, primary_key=True, serialize=False)),
+                ('grade_number', models.IntegerField(unique=True)),
+                ('name', models.CharField(max_length=50)),
+                ('description', models.TextField(blank=True, null=True)),
+                ('is_active', models.BooleanField(default=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+            ],
+            options={
+                'db_table': 'classes',
+                'ordering': ['grade_number'],
+            },
         ),
         
-        # Step 2: Create new classes table (template)
-        migrations.RunSQL(
-            sql="""
-            CREATE TABLE classes (
-                id char(32) NOT NULL PRIMARY KEY,
-                grade_number INTEGER NOT NULL UNIQUE,
-                name varchar(50) NOT NULL,
-                description TEXT,
-                is_active bool NOT NULL DEFAULT 1,
-                created_at datetime NOT NULL,
-                updated_at datetime NOT NULL
-            );
-            """,
-            reverse_sql="DROP TABLE IF EXISTS classes;",
+        # Create the SchoolClass model (school-specific class instances)
+        migrations.CreateModel(
+            name='SchoolClass',
+            fields=[
+                ('id', models.CharField(default=uuid.uuid4, max_length=32, primary_key=True, serialize=False)),
+                ('section', models.CharField(blank=True, max_length=10, null=True)),
+                ('room_number', models.CharField(blank=True, max_length=20, null=True)),
+                ('max_students', models.IntegerField(default=40)),
+                ('current_students', models.IntegerField(default=0)),
+                ('academic_year', models.CharField(default='2024-2025', max_length=20)),
+                ('is_active', models.BooleanField(default=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('class_obj', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='school_classes', to='superadmin.class')),
+                ('school', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='school_classes', to='superadmin.school')),
+                ('class_teacher', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='assigned_classes', to='teachers.teacherprofile')),
+            ],
+            options={
+                'db_table': 'school_classes',
+                'ordering': ['school', 'class_obj__grade_number', 'section'],
+                'unique_together': {('school', 'class_obj', 'section', 'academic_year')},
+            },
         ),
         
-        # Step 3: Create school_classes table (mapping)
-        migrations.RunSQL(
-            sql="""
-            CREATE TABLE school_classes (
-                id char(32) NOT NULL PRIMARY KEY,
-                school_id char(32) NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
-                class_obj_id char(32) NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-                section varchar(10),
-                class_teacher_id char(32) REFERENCES teachers_teacherprofile(id) ON DELETE SET NULL,
-                room_number varchar(20),
-                max_students INTEGER NOT NULL DEFAULT 40,
-                current_students INTEGER NOT NULL DEFAULT 0,
-                academic_year varchar(20) NOT NULL DEFAULT '2024-2025',
-                is_active bool NOT NULL DEFAULT 1,
-                created_at datetime NOT NULL,
-                updated_at datetime NOT NULL,
-                UNIQUE(school_id, class_obj_id, section, academic_year)
-            );
-            """,
-            reverse_sql="DROP TABLE IF EXISTS school_classes;",
+        # Add indexes
+        migrations.AddIndex(
+            model_name='schoolclass',
+            index=models.Index(fields=['school'], name='school_classes_school_idx'),
+        ),
+        migrations.AddIndex(
+            model_name='schoolclass',
+            index=models.Index(fields=['class_obj'], name='school_classes_class_idx'),
         ),
         
-        # Step 4: Create indexes for school_classes
-        migrations.RunSQL(
-            sql="""
-            CREATE INDEX school_classes_school_id ON school_classes(school_id);
-            CREATE INDEX school_classes_class_obj_id ON school_classes(class_obj_id);
-            """,
-            reverse_sql="""
-            DROP INDEX IF EXISTS school_classes_school_id;
-            DROP INDEX IF EXISTS school_classes_class_obj_id;
-            """,
-        ),
-        
-        # Step 5: Seed default classes (1-12)
-        migrations.RunSQL(
-            sql="""
-            INSERT INTO classes (id, grade_number, name, description, is_active, created_at, updated_at) VALUES
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 1, 'Class 1', 'First Grade', 1, DATETIME('now'), DATETIME('now')),
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 2, 'Class 2', 'Second Grade', 1, DATETIME('now'), DATETIME('now')),
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 3, 'Class 3', 'Third Grade', 1, DATETIME('now'), DATETIME('now')),
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 4, 'Class 4', 'Fourth Grade', 1, DATETIME('now'), DATETIME('now')),
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 5, 'Class 5', 'Fifth Grade', 1, DATETIME('now'), DATETIME('now')),
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 6, 'Class 6', 'Sixth Grade', 1, DATETIME('now'), DATETIME('now')),
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 7, 'Class 7', 'Seventh Grade', 1, DATETIME('now'), DATETIME('now')),
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 8, 'Class 8', 'Eighth Grade', 1, DATETIME('now'), DATETIME('now')),
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 9, 'Class 9', 'Ninth Grade', 1, DATETIME('now'), DATETIME('now')),
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 10, 'Class 10', 'Tenth Grade', 1, DATETIME('now'), DATETIME('now')),
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 11, 'Class 11', 'Eleventh Grade', 1, DATETIME('now'), DATETIME('now')),
-            (REPLACE(LOWER(HEX(RANDOMBLOB(16))), '-', ''), 12, 'Class 12', 'Twelfth Grade', 1, DATETIME('now'), DATETIME('now'));
-            """,
-            reverse_sql="DELETE FROM classes WHERE grade_number BETWEEN 1 AND 12;",
-        ),
+        # Seed default classes
+        migrations.RunPython(create_default_classes, reverse_create_default_classes),
     ]
-
