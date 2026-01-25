@@ -85,14 +85,28 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 # Database
 # Use DATABASE_URL from environment if available (for Railway/production)
-# Use PUBLIC URL first as internal networking may not always work
-DATABASE_URL = (
-    os.getenv('DATABASE_PUBLIC_URL') or  # Railway public proxy (most reliable)
-    os.getenv('DATABASE_URL') or 
-    os.getenv('POSTGRES_URL') or
-    os.getenv('POSTGRESQL_URL') or
-    os.getenv('DATABASE_PRIVATE_URL')  # Internal last (may not resolve)
-)
+# IMPORTANT: Railway internal URLs (*.railway.internal) don't always resolve
+# so we need to use the public proxy URL
+def get_working_database_url():
+    """Get a database URL that will actually work (avoid internal URLs)"""
+    candidates = [
+        os.getenv('DATABASE_PUBLIC_URL'),
+        os.getenv('DATABASE_URL'),
+        os.getenv('POSTGRES_URL'),
+        os.getenv('POSTGRESQL_URL'),
+    ]
+    
+    for url in candidates:
+        if url:
+            # Skip internal Railway URLs that don't resolve
+            if 'railway.internal' in url:
+                print(f"[Settings] Skipping internal URL (won't resolve)")
+                continue
+            return url
+    
+    return None
+
+DATABASE_URL = get_working_database_url()
 
 if DATABASE_URL:
     # For psycopg3, we need to replace postgres:// with postgresql://
